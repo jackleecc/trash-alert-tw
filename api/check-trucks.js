@@ -6,7 +6,7 @@
  *
  * 防禦層（按執行順序）：
  *   1. Cron Secret 驗證       — 阻斷非授權的外部呼叫
- *   2. 時間窗校驗 (17-20 TW)  — 阻斷非清運時段的無效運算（二次校驗）
+ *   2. 時間窗校驗 (17-21 TW)  — 阻斷非清運時段的無效運算（二次校驗）
  *   3. 天災停收快取 (daily_status) — DGPA Lazy Load，停收則靜默休眠
  *
  * 後續核心邏輯（Task 4 / Task 5）在通過防禦層後才被呼叫。
@@ -55,7 +55,7 @@ export default async function handler(req, res) {
 
   if (!isWithinServiceWindow()) {
     console.log(
-      `[TimeWindow] 目前台灣時間 ${hour}:${String(minute).padStart(2, '0')}，不在清運時段（17-20），略過執行。`
+      `[TimeWindow] 目前台灣時間 ${hour}:${String(minute).padStart(2, '0')}，不在清運時段（17-21），略過執行。`
     );
     return res
       .status(200)

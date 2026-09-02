@@ -51,7 +51,7 @@
 ## 五、 工程任務清單 (Actionable Task List)
 *   [x] **Task 1: Supabase 初始化** - 建立 7 張關聯表、索引，並寫入當月 `system_quota` 初始資料。
 *   [x] **Task 2: Vercel 組態設定** - 建立 `vercel.json` 綁定每日 Cron (`0 9 * * *` 對應 UTC / 台灣時間 17:00)，並設定環境變數。
-*   [x] **Task 3: API 防禦、時間窗與天災快取** - 實作 `api/check-trucks.js`，包含 Cron Secret 驗證、17:00-20:00 時間窗攔截、DGPA 人事行政總處 API 串接與 `daily_status` 狀態鎖。
+*   [x] **Task 3: API 防禦、時間窗與天災快取** - 實作 `api/check-trucks.js`，包含 Cron Secret 驗證、17:00-21:00 時間窗攜截、DGPA 人事行政總處 API 串接與 `daily_status` 狀態鎖。
 *   [x] **Task 4: 外部 API Adapter 與重試** - 實作環保局 API 資料抓取、Schema 清洗，以及 3 次非同步重試告警邏輯。
 *   [x] **Task 5: 核心運算與發送** - 實作 Geofencing 距離計算、30 分鐘冷卻檢核、配額熔斷攔截，最後串接 LINE API 推播。
 
