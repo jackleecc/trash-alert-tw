@@ -143,28 +143,31 @@ CREATE OR REPLACE FUNCTION public.reserve_quota(p_month VARCHAR(7))
 RETURNS TABLE (reserved BOOLEAN, used_count INTEGER, newly_melted BOOLEAN)
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    v_used INTEGER;
 BEGIN
     INSERT INTO public.system_quota (month, used_count, is_melted)
     VALUES (p_month, 0, FALSE)
     ON CONFLICT (month) DO NOTHING;
 
-    RETURN QUERY
-    WITH updated AS (
-        UPDATE public.system_quota
-        SET used_count = used_count + 1,
-            is_melted = used_count + 1 >= 195
-        WHERE month = p_month
-          AND used_count < 195
-        RETURNING used_count
-    )
-    SELECT TRUE, updated.used_count, updated.used_count = 195
-    FROM updated;
+    UPDATE public.system_quota AS sq
+    SET used_count = sq.used_count + 1,
+        is_melted = sq.used_count + 1 >= 195
+    WHERE sq.month = p_month
+      AND sq.used_count < 195
+    RETURNING sq.used_count INTO v_used;
 
-    IF NOT FOUND THEN
-        RETURN QUERY
-        SELECT FALSE, quota.used_count, FALSE
-        FROM public.system_quota AS quota
-        WHERE quota.month = p_month;
+    IF FOUND THEN
+        reserved := TRUE;
+        used_count := v_used;
+        newly_melted := (v_used = 195);
+        RETURN NEXT;
+    ELSE
+        SELECT FALSE, sq.used_count, FALSE
+        INTO reserved, used_count, newly_melted
+        FROM public.system_quota AS sq
+        WHERE sq.month = p_month;
+        RETURN NEXT;
     END IF;
 END;
 $$;
