@@ -1,0 +1,41 @@
+name: Trigger trash-alert check
+
+# 方案 A：以外部排程器每 5 分鐘呼叫 /api/check-trucks，繞過 Vercel Hobby 每日一次限制。
+# GitHub Actions 的 schedule 最短間隔為 5 分鐘，且偶有數分鐘延遲。
+# 若需要每 1 分鐘、更準時的觸發，改用 cron-job.org（見 README/交接文件）。
+
+on:
+  schedule:
+    # UTC 08:00–12:59（台灣 16:00–20:59），每 5 分鐘一次。
+    - cron: "*/5 8-12 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: trash-alert-trigger
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call check-trucks endpoint
+        env:
+          ENDPOINT: ${{ secrets.CHECK_TRUCKS_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$ENDPOINT" ] || [ -z "$CRON_SECRET" ]; then
+            echo "缺少 CHECK_TRUCKS_URL 或 CRON_SECRET secret。" >&2
+            exit 1
+          fi
+          http_code=$(curl -sS -o /tmp/resp.json -w "%{http_code}" \
+            --max-time 60 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "$ENDPOINT")
+          echo "HTTP ${http_code}"
+          cat /tmp/resp.json || true
+          # 2xx 視為成功；其餘讓步驟失敗以便在 Actions 頁面看到警示。
+          case "$http_code" in
+            2*) exit 0 ;;
+            *) exit 1 ;;
+          esac

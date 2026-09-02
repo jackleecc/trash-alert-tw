@@ -1,0 +1,17 @@
+{
+  "name": "trash-alert-tw",
+  "version": "1.0.0",
+  "description": "高雄市垃圾車 LINE 追蹤通知系統 (Trash Alert System)",
+  "main": "api/check-trucks.js",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.0"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

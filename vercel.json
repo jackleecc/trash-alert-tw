@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/check-trucks",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}
