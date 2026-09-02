@@ -1,8 +1,7 @@
 name: Trigger trash-alert check
 
-# 方案 A：以外部排程器每 5 分鐘呼叫 /api/check-trucks，繞過 Vercel Hobby 每日一次限制。
-# GitHub Actions 的 schedule 最短間隔為 5 分鐘，且偶有數分鐘延遲。
-# 若需要每 1 分鐘、更準時的觸發，改用 cron-job.org（見 README/交接文件）。
+# 方案 A：以 GitHub Actions 每分鐘呼叫 /api/check-trucks，繞過 Vercel Hobby 每日一次限制。
+# GitHub Actions 排程在尖峰時仍可能延遲數分鐘。
 
 on:
   schedule:
