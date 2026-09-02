@@ -58,6 +58,28 @@ Vercel Cron 為備援：
 - 台灣時間：每日 `17:00` 一次。
 - 設定檔：[vercel.json](vercel.json)
 
+## 執行架構
+
+```text
+GitHub Actions / Vercel Cron
+	-> /api/check-trucks
+	-> CRON_SECRET 與台灣時間窗驗證
+	-> DGPA 停班停課快取檢查
+	-> 高雄市垃圾車即時動態 API
+	-> Supabase 路線、站點與啟用群組查詢
+	-> 250 公尺地理圍欄與官方 linid 自動觀測
+	-> LINE Push Message
+```
+
+## 通知防護
+
+- 路線的 `active_days` 控制營運日；目前預設週一、二、四、五、六，排除週三與週日。
+- 僅處理 `routes.is_active = true` 的路線，以及 `line_groups.is_active = true` 的群組。
+- 高雄市宣布天然災害停班停課時，當日停止抓取車輛與發送通知。
+- 同一群組、路線、站點設有 30 分鐘冷卻時間；資料庫以原子鎖防止重疊觸發造成重複通知。
+- LINE 月配額於 195 則啟動熔斷，停止一般到站通知。
+- 官方 `linid` 不需預先等於本地 `routes.id`；車輛進入訂閱站點 250 公尺內時會寫入 `route_linids` 供後續觀測。
+
 ## 環境變數
 
 以下機密只設定於 Vercel Production 與 GitHub Actions Secrets，不可提交到 Git：
