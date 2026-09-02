@@ -6,8 +6,8 @@ name: Trigger trash-alert check
 
 on:
   schedule:
-    # UTC 08:00–12:59（台灣 16:00–20:59），每 5 分鐘一次。
-    - cron: "*/5 8-12 * * *"
+    # UTC 09:00–12:55（台灣 17:00–20:55），每 5 分鐘一次，對齊清運時間窗。
+    - cron: "*/5 9-12 * * *"
   workflow_dispatch: {}
 
 concurrency:
