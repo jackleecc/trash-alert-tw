@@ -1,0 +1,10 @@
+import crypto from 'node:crypto';
+const original = '{\n  "destination": "U123",\n  "events": []\n}';
+const secret = 'test-secret';
+const sig = crypto.createHmac('SHA256', secret).update(original).digest('base64');
+const parsed = JSON.parse(original);
+const stringified = JSON.stringify(parsed);
+const reSig = crypto.createHmac('SHA256', secret).update(stringified).digest('base64');
+console.log('Original Sig:   ', sig);
+console.log('Stringified Sig:', reSig);
+console.log('Match?', sig === reSig);
