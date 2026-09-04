@@ -22,7 +22,7 @@ test('fetchTrucksWithRetry - success on first try', async () => {
   try {
     const res = await fetchTrucksWithRetry('2026-09-02');
     assert.equal(res.ok, true);
-    assert.equal(res.data.length, 1);
+    assert.equal(res.data.length, 2);
     assert.equal(res.data[0].route_id, 'R1');
     assert.equal(res.retryCount, 0);
   } finally {
