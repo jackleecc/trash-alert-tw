@@ -20,7 +20,7 @@ import { processTruckArrivals } from '../lib/coreProcessor.js';
 
 // ── 常數 ────────────────────────────────────────────────────────────────────
 
-const CRON_SECRET = process.env.CRON_SECRET;
+// ── 主要 Handler ─────────────────────────────────────────────────────────────
 
 /**
  * 安全字串比對，防禦 Timing Attack
@@ -36,9 +36,9 @@ function safeCompare(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-// ── 主要 Handler ─────────────────────────────────────────────────────────────
-
 export default async function handler(req, res) {
+  const CRON_SECRET = process.env.CRON_SECRET;
+
   // ── 防禦層 1：Cron Secret 驗證 ───────────────────────────────────────────
   // Vercel Cron 會在 Authorization header 附加 Bearer <CRON_SECRET>
   const authHeader = req.headers['authorization'] ?? '';

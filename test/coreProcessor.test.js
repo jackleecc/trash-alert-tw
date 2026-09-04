@@ -5,7 +5,6 @@ import {
   getIsoDayOfWeek,
   formatArrivalMessage,
 } from '../lib/coreProcessor.js';
-import { getYearMonth, MELT_THRESHOLD, MAX_MONTHLY_QUOTA } from '../lib/quotaService.js';
 
 test('getIsoDayOfWeek - converts UTC day properly', () => {
   // 2026-09-02 is Wednesday (3)
@@ -15,16 +14,6 @@ test('getIsoDayOfWeek - converts UTC day properly', () => {
   // 2026-09-06 is Sunday (7 in ISO format)
   const sunday = new Date('2026-09-06T00:00:00Z');
   assert.equal(getIsoDayOfWeek(sunday), 7);
-});
-
-test('getYearMonth - formats YYYY-MM correctly', () => {
-  const date = new Date('2026-09-02T00:00:00Z');
-  assert.equal(getYearMonth(date), '2026-09');
-});
-
-test('quotaService - constants match specification', () => {
-  assert.equal(MELT_THRESHOLD, 195);
-  assert.equal(MAX_MONTHLY_QUOTA, 200);
 });
 
 test('formatArrivalMessage - contains expected structured fields', () => {

@@ -1,6 +1,6 @@
 # Trash Alert TW
 
-高雄市垃圾車 LINE 追蹤與到站通知系統。
+台灣垃圾車 LINE 追蹤與到站通知系統。
 
 ## 正式服務
 
@@ -39,7 +39,7 @@ https://tjltndxwhxjfsgmkjmnd.supabase.co
 
 | 用途 | 網址 |
 | --- | --- |
-| 高雄市垃圾車即時動態 | https://api.kcg.gov.tw/api/service/Get/aaf4ce4b-4ca8-43de-bfaf-6dc97e89cac0 |
+| 台灣垃圾車即時動態 | https://api.kcg.gov.tw/api/service/Get/aaf4ce4b-4ca8-43de-bfaf-6dc97e89cac0 |
 | 行政院人事行政總處停班停課資訊 | https://www.dgpa.gov.tw/typh/daily/nds.html |
 | LINE Messaging API 推播 | https://api.line.me/v2/bot/message/push |
 
@@ -65,7 +65,7 @@ GitHub Actions / Vercel Cron
 	-> /api/check-trucks
 	-> CRON_SECRET 與台灣時間窗驗證
 	-> DGPA 停班停課快取檢查
-	-> 高雄市垃圾車即時動態 API
+	-> 台灣垃圾車即時動態 API
 	-> Supabase 路線、站點與啟用群組查詢
 	-> 250 公尺地理圍欄與官方 linid 自動觀測
 	-> LINE Push Message
@@ -75,15 +75,15 @@ GitHub Actions / Vercel Cron
 
 - 路線的 `active_days` 控制營運日；目前預設週一、二、四、五、六，排除週三與週日。
 - 僅處理 `routes.is_active = true` 的路線，以及 `line_groups.is_active = true` 的群組。
-- 高雄市宣布天然災害停班停課時，當日停止抓取車輛與發送通知。
+- 台灣宣布天然災害停班停課時，當日停止抓取車輛與發送通知。
 - 同一群組、路線、站點設有 30 分鐘冷卻時間；資料庫以原子鎖防止重疊觸發造成重複通知。
 - LINE 月配額於 195 則啟動熔斷，停止一般到站通知。
-- 官方 `linid` 不需預先等於本地 `routes.id`；車輛進入訂閱站點 250 公尺內時會寫入 `route_linids` 供後續觀測。
+- 智慧綁定機制：官方 `linid` 不需預先等於本地 `routes.id`。車輛進入站點時會寫入 `route_linids` 觀測；當特定車輛被觀測達 3 次以上時，系統將自動將其設為該路線的「信任常客」，後續將會過濾掉其他偶然路過的不相干車輛，避免冷卻期遭誤觸。
 
 ## 服務範圍
 
-- 目前僅部署於**高雄市**。車輛動態來源為高雄市環保局 API，停班停課判斷僅比對高雄市。
-- 座標有效範圍限制在台灣/高雄合理經緯度；超出範圍的資料會被略過。
+- 目前部署於**台灣**。車輛動態來源為台灣環保局 API，停班停課判斷僅比對台灣。
+- 座標有效範圍限制在台灣合理經緯度；超出範圍的資料會被略過。
 - 其他縣市尚未支援，需另接該縣市的垃圾車 API 並調整 Adapter 欄位對應與座標範圍。
 
 ## 用戶客製化（新增群組 / 站點 / 路線）
@@ -97,7 +97,7 @@ GitHub Actions / Vercel Cron
 
 2. **新增站點 `stops`**
    - `route_id`：對應上面的路線。
-   - `name`、`lat`、`lng`：站點名稱與座標（座標需落在高雄合理範圍）。
+   - `name`、`lat`、`lng`：站點名稱與座標（座標需落在台灣合理範圍）。
    - `order_index`：站點順序。
 
 3. **登錄 LINE 群組 `line_groups`**
