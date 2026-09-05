@@ -9,9 +9,9 @@
     "test:dryrun": "node --env-file=.env scripts/dryRun.js"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.48.0"
+    "@supabase/supabase-js": "^2.48.0",
+    "dotenv": "^17.4.2"
   },
-  "devDependencies": {},
   "engines": {
     "node": ">=18.0.0"
   }

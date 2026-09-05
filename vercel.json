@@ -1,4 +1,13 @@
 {
+  "regions": ["hkg1"],
+  "functions": {
+    "api/check-trucks.js": {
+      "maxDuration": 30
+    },
+    "api/line-webhook.js": {
+      "maxDuration": 10
+    }
+  },
   "crons": [
     {
       "path": "/api/check-trucks",
