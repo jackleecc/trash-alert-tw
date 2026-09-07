@@ -14,7 +14,7 @@
 
 import crypto from 'node:crypto';
 import { isWithinServiceWindow, getTaiwanNow } from '../lib/timeUtils.js';
-import { getTodaySuspensionStatus } from '../lib/dailyStatus.js';
+import { getTodaySuspendedCities } from '../lib/dailyStatus.js';
 import { fetchTrucksWithRetry } from '../lib/truckApi.js';
 import { processTruckArrivals } from '../lib/coreProcessor.js';
 
@@ -63,9 +63,9 @@ export default async function handler(req, res) {
   }
 
   // ── 防禦層 3：天災停收快取（daily_status Lazy Load） ────────────────────
-  let isSuspended;
+  let suspendedCities;
   try {
-    isSuspended = await getTodaySuspensionStatus(dateStr);
+    suspendedCities = await getTodaySuspendedCities(dateStr);
   } catch (err) {
     // DGPA 或 DB 查詢異常：記錄錯誤並安全跳過，避免誤判為停收
     console.error(`[DailyStatus] 查詢異常，跳過本次執行：${err.message}`);
@@ -76,13 +76,20 @@ export default async function handler(req, res) {
     });
   }
 
-  if (isSuspended) {
+  // '__ALL__' 為舊版相容標記，代表全部停收
+  if (suspendedCities.includes('__ALL__')) {
     console.log(
-      `[Suspension] 今日（${dateStr}）高雄市天然災害停收，系統靜默休眠。`
+      `[Suspension] 今日（${dateStr}）天然災害全面停收，系統靜默休眠。`
     );
     return res
       .status(200)
       .json({ ok: true, skipped: true, reason: 'suspension-day' });
+  }
+
+  if (suspendedCities.length > 0) {
+    console.log(
+      `[Suspension] 今日（${dateStr}）以下縣市天災停收：${suspendedCities.join('、')}，其餘縣市照常。`
+    );
   }
 
   // ── 通過所有防禦層，開始核心邏輯 ────────────────────────────────────────
@@ -111,7 +118,7 @@ export default async function handler(req, res) {
     console.log(`[Main] 成功取得 ${truckData.length} 筆有效車輛動態資料。`);
 
     // Task 5：核心運算（Geofence、冷卻、配額熔斷、LINE 推播）
-    const processResult = await processTruckArrivals(truckData, taiwanNowInfo);
+    const processResult = await processTruckArrivals(truckData, taiwanNowInfo, suspendedCities);
 
     return res.status(200).json({
       ok: true,
