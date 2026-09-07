@@ -126,6 +126,8 @@ export default async function handler(req, res) {
       recordsCount: truckData.length,
       matchedArrivals: processResult.matchedArrivals,
       sentNotifications: processResult.sentNotifications,
+      failedNotifications: processResult.failedNotifications || 0,
+      lineErrors: processResult.lineErrors || [],
       reason: processResult.reason || 'processed-successfully',
     });
   } catch (err) {
