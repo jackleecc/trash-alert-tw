@@ -17,6 +17,7 @@ import { isWithinServiceWindow, getTaiwanNow } from '../lib/timeUtils.js';
 import { getTodaySuspendedCities } from '../lib/dailyStatus.js';
 import { fetchTrucksWithRetry } from '../lib/truckApi.js';
 import { processTruckArrivals } from '../lib/coreProcessor.js';
+import { recordExecutionLog, extractTriggerSource } from '../lib/logger.js';
 
 // ── 常數 ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ function safeCompare(a, b) {
 
 export default async function handler(req, res) {
   const CRON_SECRET = process.env.CRON_SECRET;
+  const triggerSource = extractTriggerSource(req);
 
   // ── 防禦層 1：Cron Secret 驗證 ───────────────────────────────────────────
   // Vercel Cron 會在 Authorization header 附加 Bearer <CRON_SECRET>
@@ -45,8 +47,17 @@ export default async function handler(req, res) {
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
 
   if (!CRON_SECRET || !safeCompare(token, CRON_SECRET)) {
-    console.warn('[Auth] 授權失敗，拒絕請求。');
-    return res.status(401).json({ ok: false, reason: 'Unauthorized' });
+    console.warn(`[Auth] 授權失敗，拒絕請求 (來源: ${triggerSource})。`);
+    await recordExecutionLog({
+      status: 'unauthorized',
+      reason: 'invalid-cron-secret',
+      triggerSource,
+      details: {
+        hasHeader: Boolean(authHeader),
+        headerPrefix: authHeader ? authHeader.slice(0, 10) + '...' : 'none',
+      },
+    });
+    return res.status(401).json({ ok: false, reason: 'Unauthorized', triggerSource });
   }
 
   // ── 防禦層 2：時間窗校驗（二次防線） ────────────────────────────────────
@@ -57,9 +68,16 @@ export default async function handler(req, res) {
     console.log(
       `[TimeWindow] 目前台灣時間 ${hour}:${String(minute).padStart(2, '0')}，不在清運時段（17-21），略過執行。`
     );
+    await recordExecutionLog({
+      status: 'skipped',
+      reason: 'outside-service-window',
+      triggerSource,
+      details: { hour, minute },
+      dateStr,
+    });
     return res
       .status(200)
-      .json({ ok: true, skipped: true, reason: 'outside-service-window' });
+      .json({ ok: true, skipped: true, reason: 'outside-service-window', triggerSource });
   }
 
   // ── 防禦層 3：天災停收快取（daily_status Lazy Load） ────────────────────
@@ -69,10 +87,18 @@ export default async function handler(req, res) {
   } catch (err) {
     // DGPA 或 DB 查詢異常：記錄錯誤並安全跳過，避免誤判為停收
     console.error(`[DailyStatus] 查詢異常，跳過本次執行：${err.message}`);
+    await recordExecutionLog({
+      status: 'error',
+      reason: 'daily-status-check-failed',
+      triggerSource,
+      details: { error: err.message },
+      dateStr,
+    });
     return res.status(500).json({
       ok: false,
       reason: 'daily-status-check-failed',
       error: err.message,
+      triggerSource,
     });
   }
 
@@ -81,9 +107,16 @@ export default async function handler(req, res) {
     console.log(
       `[Suspension] 今日（${dateStr}）天然災害全面停收，系統靜默休眠。`
     );
+    await recordExecutionLog({
+      status: 'skipped',
+      reason: 'suspension-day',
+      triggerSource,
+      details: { suspendedCities },
+      dateStr,
+    });
     return res
       .status(200)
-      .json({ ok: true, skipped: true, reason: 'suspension-day' });
+      .json({ ok: true, skipped: true, reason: 'suspension-day', triggerSource });
   }
 
   if (suspendedCities.length > 0) {
@@ -94,7 +127,7 @@ export default async function handler(req, res) {
 
   // ── 通過所有防禦層，開始核心邏輯 ────────────────────────────────────────
   console.log(
-    `[Main] 台灣時間 ${hour}:${String(minute).padStart(2, '0')}（${dateStr}），開始執行垃圾車追蹤核心邏輯...`
+    `[Main] 台灣時間 ${hour}:${String(minute).padStart(2, '0')}（${dateStr}），開始執行垃圾車追蹤核心邏輯 (來源: ${triggerSource})...`
   );
 
   try {
@@ -106,12 +139,21 @@ export default async function handler(req, res) {
       console.warn(
         `[Main] 車輛資料抓取未完成 (paused=${paused}, retryCount=${retryCount}): ${fetchErr}`
       );
+      await recordExecutionLog({
+        status: 'warning',
+        reason: paused ? 'api-retry-paused' : 'api-fetch-failed',
+        triggerSource,
+        recordsCount: 0,
+        details: { retryCount, error: fetchErr },
+        dateStr,
+      });
       return res.status(200).json({
         ok: false,
         skipped: true,
         reason: paused ? 'api-retry-paused' : 'api-fetch-failed',
         retryCount,
         error: fetchErr,
+        triggerSource,
       });
     }
 
@@ -119,6 +161,33 @@ export default async function handler(req, res) {
 
     // Task 5：核心運算（Geofence、冷卻、配額熔斷、LINE 推播）
     const processResult = await processTruckArrivals(truckData, taiwanNowInfo, suspendedCities);
+
+    // 產生各站點最近車輛摘要字串 (供 Log 檢索)
+    const closestSummary = (processResult.closestTrucks || [])
+      .map((st) => {
+        if (!st.closestTruck) return `${st.stopName}: 無在線車輛`;
+        return `${st.stopName}: ${st.closestTruck.carId} (${st.closestTruck.distanceMeters}m)`;
+      })
+      .join('; ');
+
+    const executionStatus = (processResult.failedNotifications > 0)
+      ? 'warning'
+      : 'success';
+
+    await recordExecutionLog({
+      status: executionStatus,
+      reason: processResult.reason || 'processed-successfully',
+      triggerSource,
+      recordsCount: truckData.length,
+      matchedArrivals: processResult.matchedArrivals,
+      sentNotifications: processResult.sentNotifications,
+      details: {
+        closestSummary,
+        closestTrucks: processResult.closestTrucks || [],
+        lineErrors: processResult.lineErrors || [],
+      },
+      dateStr,
+    });
 
     return res.status(200).json({
       ok: true,
@@ -128,11 +197,20 @@ export default async function handler(req, res) {
       sentNotifications: processResult.sentNotifications,
       failedNotifications: processResult.failedNotifications || 0,
       lineErrors: processResult.lineErrors || [],
+      closestTrucks: processResult.closestTrucks || [],
       reason: processResult.reason || 'processed-successfully',
+      triggerSource,
     });
   } catch (err) {
     console.error(`[Main] 核心邏輯發生未預期錯誤：${err.message}`);
-    return res.status(500).json({ ok: false, reason: 'internal-error', error: err.message });
+    await recordExecutionLog({
+      status: 'error',
+      reason: 'internal-error',
+      triggerSource,
+      details: { error: err.message },
+      dateStr,
+    });
+    return res.status(500).json({ ok: false, reason: 'internal-error', error: err.message, triggerSource });
   }
 }
 

@@ -33,6 +33,24 @@
 
 ---
 
+## 自動排程
+
+cron-job.org 為主要高頻觸發器：
+
+- 台灣時間：每日 `17:00-21:59`（週一、二、四、五、六），每 1~2 分鐘呼叫一次垃圾車檢查 API。
+- Request Header：`Authorization: Bearer <CRON_SECRET>`
+
+Vercel Cron 為備援與每日初始狀態快取：
+
+- Cron：`0 9 * * *`（UTC）
+- 台灣時間：每日 `17:00` 一次。
+- 設定檔：[vercel.json](vercel.json)
+
+> [!CAUTION]
+> **Vercel 環境變數 `CRON_SECRET` 維護注意事項**：
+> Vercel 上的機密環境變數（Sensitive Environment Variables）一旦儲存後，**無法點擊眼睛圖示查看已建立的完整密碼**（系統會加密隱藏）。
+> 若忘記 `CRON_SECRET` 或需與外部排程（cron-job.org）校準，**應直接在 Vercel 刪除該變數並重新建立（記得 Redeploy 讓新環境變數生效）**，並立刻將新建立的密碼同步更新至 cron-job.org 的 `Authorization` Header，避免因密碼不一致導致排程持續被 HTTP 401 阻擋。
+
 ## 系統核心執行流程
 
 ### 1. 垃圾車追蹤流程 (`/api/check-trucks`)
