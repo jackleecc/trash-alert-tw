@@ -56,6 +56,24 @@ test('normalizeTruckRecord - maps official KCG API fields', () => {
   });
 });
 
+test('normalizeTruckRecord - maps Taoyuan API fields (RouteNo / VehicleNo / px / py)', () => {
+  const result = normalizeTruckRecord({
+    RouteNo: 'TY-010',
+    VehicleNo: '888-TY',
+    UpdateTime: '2026-09-08 17:45:00',
+    px: '121.3009',
+    py: '24.9936',
+  });
+
+  assert.deepEqual(result, {
+    route_id: 'TY-010',
+    lat: 24.9936,
+    lng: 121.3009,
+    car_id: '888-TY',
+    time: '2026-09-08 17:45:00',
+  });
+});
+
 test('normalizeTruckRecord - skips out-of-bounds coordinates', () => {
   // Invalid lat (< 21.5 or > 26.5)
   assert.equal(
