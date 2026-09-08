@@ -15,6 +15,7 @@ test('normalizeTruckRecord - valid standard object', () => {
     route_id: 'R101',
     lat: 22.6273,
     lng: 120.3014,
+    waste_type: 'garbage',
     car_id: 'TRUCK-01',
     time: '2026-09-02 17:15:00',
   });
@@ -33,6 +34,7 @@ test('normalizeTruckRecord - field variations mapping (RouteId, Latitude, Longit
     route_id: 'R202',
     lat: 22.65,
     lng: 120.32,
+    waste_type: 'garbage',
     car_id: 'KCG-8888',
     time: '17:30',
   });
@@ -51,6 +53,7 @@ test('normalizeTruckRecord - maps official KCG API fields', () => {
     route_id: '1066015646',
     lat: 22.87174,
     lng: 120.25215,
+    waste_type: 'garbage',
     car_id: 'KEW-0079',
     time: '2026-09-02T13:14:45',
   });
@@ -69,9 +72,28 @@ test('normalizeTruckRecord - maps Taoyuan API fields (RouteNo / VehicleNo / px /
     route_id: 'TY-010',
     lat: 24.9936,
     lng: 121.3009,
+    waste_type: 'garbage',
     car_id: '888-TY',
     time: '2026-09-08 17:45:00',
   });
+});
+
+test('normalizeTruckRecord - detects recycling / food waste type', () => {
+  const recyclingRaw = {
+    route_id: 'R999',
+    lat: 25.033,
+    lng: 121.565,
+    car_type: '資源回收車',
+  };
+  const foodWasteRaw = {
+    route_id: 'R998',
+    lat: 25.033,
+    lng: 121.565,
+    type: '廚餘回收',
+  };
+
+  assert.equal(normalizeTruckRecord(recyclingRaw).waste_type, 'recycling');
+  assert.equal(normalizeTruckRecord(foodWasteRaw).waste_type, 'recycling');
 });
 
 test('normalizeTruckRecord - skips out-of-bounds coordinates', () => {
