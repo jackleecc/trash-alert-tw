@@ -1,6 +1,12 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchTrucksWithRetry } from '../lib/truckApi.js';
+import {
+  fetchTrucksWithRetry,
+  getTargetApiUrls,
+  NTPC_TRUCK_API_URL,
+  KCG_TRUCK_API_URL,
+  TAOYUAN_TRUCK_API_URL,
+} from '../lib/truckApi.js';
 
 import { supabase } from '../lib/supabaseClient.js';
 import * as lineClient from '../lib/lineClient.js';
@@ -71,5 +77,28 @@ test('fetchTrucksWithRetry - pauses and alerts after max failures', async () => 
     process.env.DRY_RUN = originalDryRun;
     global.fetch = originalFetch;
     mock.restoreAll();
+  }
+});
+
+test('getTargetApiUrls - filters URLs dynamically based on target cities', () => {
+  const originalEnv = process.env.TRUCK_API_URL;
+  delete process.env.TRUCK_API_URL;
+
+  try {
+    const ntpcOnly = getTargetApiUrls(undefined, ['新北市']);
+    assert.deepEqual(ntpcOnly, [NTPC_TRUCK_API_URL]);
+
+    const kcgOnly = getTargetApiUrls(undefined, ['高雄市']);
+    assert.deepEqual(kcgOnly, [KCG_TRUCK_API_URL]);
+
+    const multiCities = getTargetApiUrls(undefined, ['新北市', '桃園市']);
+    assert.deepEqual(multiCities, [NTPC_TRUCK_API_URL, TAOYUAN_TRUCK_API_URL]);
+
+    const defaultAll = getTargetApiUrls(undefined, []);
+    assert.deepEqual(defaultAll, [KCG_TRUCK_API_URL, NTPC_TRUCK_API_URL, TAOYUAN_TRUCK_API_URL]);
+  } finally {
+    if (originalEnv !== undefined) {
+      process.env.TRUCK_API_URL = originalEnv;
+    }
   }
 });

@@ -16,7 +16,7 @@ import crypto from 'node:crypto';
 import { isWithinServiceWindow, getTaiwanNow } from '../lib/timeUtils.js';
 import { getTodaySuspendedCities } from '../lib/dailyStatus.js';
 import { fetchTrucksWithRetry } from '../lib/truckApi.js';
-import { processTruckArrivals } from '../lib/coreProcessor.js';
+import { processTruckArrivals, getActiveSubscriptionContext } from '../lib/coreProcessor.js';
 import { recordExecutionLog, extractTriggerSource } from '../lib/logger.js';
 
 // ── 常數 ────────────────────────────────────────────────────────────────────
@@ -131,9 +131,41 @@ export default async function handler(req, res) {
   );
 
   try {
-    // Task 4：外部 API Adapter（環保局 API 抓取、Schema 清洗與非同步重試）
+    // 智慧過濾：先取得今日活躍的路線與訂閱站點所屬縣市
+    const subContext = await getActiveSubscriptionContext(taiwanNowInfo, suspendedCities);
+    if (!subContext.ok) {
+      console.error(`[Main] 查詢訂閱上下文失敗: ${subContext.error}`);
+      await recordExecutionLog({
+        status: 'error',
+        reason: subContext.reason || 'db-context-error',
+        triggerSource,
+        details: { error: subContext.error },
+        dateStr,
+      });
+      return res.status(500).json({ ok: false, reason: subContext.reason, error: subContext.error, triggerSource });
+    }
+
+    if (!subContext.hasActiveSubscriptions) {
+      console.log(`[Main] 今日無排定營運之清運路線或活躍群組訂閱，安全略過。`);
+      await recordExecutionLog({
+        status: 'skipped',
+        reason: subContext.reason || 'no-active-subscriptions',
+        triggerSource,
+        dateStr,
+      });
+      return res.status(200).json({
+        ok: true,
+        skipped: true,
+        reason: subContext.reason || 'no-active-subscriptions',
+        triggerSource,
+      });
+    }
+
+    console.log(`[Main] 今日有訂閱之目標縣市：${subContext.activeCities.join('、')}，啟動專屬精準抓取...`);
+
+    // Task 4：外部 API Adapter（依目標縣市精準抓取，非訂閱縣市完全不連線）
     const { ok, data: truckData, paused, retryCount, error: fetchErr } =
-      await fetchTrucksWithRetry(dateStr);
+      await fetchTrucksWithRetry(dateStr, undefined, subContext.activeCities);
 
     if (!ok) {
       console.warn(
@@ -160,7 +192,7 @@ export default async function handler(req, res) {
     console.log(`[Main] 成功取得 ${truckData.length} 筆有效車輛動態資料。`);
 
     // Task 5：核心運算（Geofence、冷卻、配額熔斷、LINE 推播）
-    const processResult = await processTruckArrivals(truckData, taiwanNowInfo, suspendedCities);
+    const processResult = await processTruckArrivals(truckData, taiwanNowInfo, suspendedCities, subContext);
 
     // 產生各站點最近車輛摘要字串 (供 Log 檢索)
     const closestSummary = (processResult.closestTrucks || [])
