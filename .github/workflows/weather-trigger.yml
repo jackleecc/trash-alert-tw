@@ -2,8 +2,9 @@ name: Trigger weather check
 
 on:
   schedule:
-    # 每天每 30 分鐘執行一次，全天候監控降雨
-    - cron: "*/30 * * * *"
+    # 避開台灣夜間靜音時段 00:00~06:59 (UTC 16:00~22:59)
+    # 於台灣時間 07:00~23:59 (UTC 23:00~15:59) 每 30 分鐘排程執行一次
+    - cron: "*/30 23,0-15 * * *"
   workflow_dispatch: {}
 
 concurrency:

@@ -17,7 +17,10 @@ import crypto from 'node:crypto';
 import { supabase } from '../lib/supabaseClient.js';
 import { sendLinePushMessage } from '../lib/lineClient.js';
 import { checkUpcomingRain } from '../lib/weatherApi.js';
-import { getTaiwanNow } from '../lib/timeUtils.js';
+import { getTaiwanNow, isWeatherQuietHours } from '../lib/timeUtils.js';
+
+const COOLDOWN_NOTIFIED_MS = 6 * 60 * 60 * 1000; // 發送過通知：冷卻 6 小時
+const COOLDOWN_UNNOTIFIED_MS = 3 * 60 * 60 * 1000; // 查詢但未通知：冷卻 3 小時
 
 /**
  * 安全字串比對，防禦 Timing Attack
@@ -42,10 +45,17 @@ export default async function handler(req, res) {
   }
 
   const { dateStr } = getTaiwanNow();
+
+  // 2. 檢查是否在夜間 0:00~7:00 靜音時段
+  if (isWeatherQuietHours()) {
+    console.log(`[CheckWeather] 目前處於夜間靜音時段 (00:00~07:00)，略過氣象檢查 (${dateStr})。`);
+    return res.status(200).json({ ok: true, skipped: true, reason: 'quiet-hours' });
+  }
+
   console.log(`[CheckWeather] 開始執行氣象檢查排程 (${dateStr})...`);
 
   try {
-    // 2. 取得所有啟用的群組，以及他們訂閱的站點經緯度
+    // 3. 取得所有啟用的群組，以及他們訂閱的站點經緯度
     const { data: subs, error: subsError } = await supabase
       .from('subscriptions')
       .select(`
@@ -65,7 +75,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, skipped: true, reason: 'no-active-groups' });
     }
 
-    // 3. 以站點 (stop_id) 為單位進行去重，減少氣象 API 請求
+    // 4. 以站點 (stop_id) 為單位進行去重
     const stopMap = new Map();
     for (const sub of subs) {
       if (!stopMap.has(sub.stop_id)) {
@@ -80,20 +90,64 @@ export default async function handler(req, res) {
       stopMap.get(sub.stop_id).groups.push(sub.group_id);
     }
 
+    // 5. 查詢 weather_check_status 表以比對站點冷卻狀態
+    const stopIds = Array.from(stopMap.keys());
+    const { data: statusRows, error: statusError } = await supabase
+      .from('weather_check_status')
+      .select('stop_id, last_checked_at, last_notified_at')
+      .in('stop_id', stopIds);
+
+    if (statusError) {
+      console.warn(`[CheckWeather] 查詢 weather_check_status 失敗: ${statusError.message}`);
+    }
+
+    const statusMap = new Map();
+    if (statusRows) {
+      for (const row of statusRows) {
+        statusMap.set(row.stop_id, row);
+      }
+    }
+
     let notificationsSent = 0;
+    let checkedStops = 0;
+    let skippedStops = 0;
+    const nowMs = Date.now();
     const currentMonth = dateStr.slice(0, 7); // 'YYYY-MM'
 
-    // 4. 針對每個站點查詢天氣
+    // 6. 針對每個站點檢查冷卻並決定是否呼叫 API
     for (const stop of stopMap.values()) {
+      const status = statusMap.get(stop.stop_id);
+
+      // (1) 若曾有推播且距上次推播未滿 6 小時，跳過查詢
+      if (status?.last_notified_at) {
+        const lastNotifiedMs = new Date(status.last_notified_at).getTime();
+        if (nowMs - lastNotifiedMs < COOLDOWN_NOTIFIED_MS) {
+          console.log(`[CheckWeather] 站點 ${stop.name} (${stop.stop_id}) 距前次推播未滿 6 小時，略過查詢。`);
+          skippedStops++;
+          continue;
+        }
+      }
+
+      // (2) 若距前次查詢未滿 3 小時，跳過查詢
+      if (status?.last_checked_at) {
+        const lastCheckedMs = new Date(status.last_checked_at).getTime();
+        if (nowMs - lastCheckedMs < COOLDOWN_UNNOTIFIED_MS) {
+          console.log(`[CheckWeather] 站點 ${stop.name} (${stop.stop_id}) 距前次查詢未滿 3 小時，略過查詢。`);
+          skippedStops++;
+          continue;
+        }
+      }
+
+      checkedStops++;
       const { shouldNotify, desc } = await checkUpcomingRain(stop.lat, stop.lng);
+      let stopNotified = false;
 
       if (shouldNotify) {
         console.log(`[CheckWeather] 站點 ${stop.name} (${stop.stop_id}) 觸發環境警報:\n${desc}`);
         
-        // 5. 對每個訂閱該站點的群組進行通知檢查
+        // 對每個訂閱該站點的群組進行通知檢查
         for (const groupId of stop.groups) {
           // 檢查冷卻時間：6 小時 (360 分鐘)
-          // 參數: p_group_id, p_route_id, p_stop_id, p_car_id, p_cooldown_minutes
           const { data: logId, error: claimError } = await supabase.rpc('claim_notification', {
             p_group_id: groupId,
             p_route_id: 'WEATHER',
@@ -107,19 +161,17 @@ export default async function handler(req, res) {
             continue;
           }
 
-          // 6. 檢查發送額度
+          // 檢查發送額度
           const { data: quotaResult, error: quotaError } = await supabase.rpc('reserve_quota', {
             p_month: currentMonth
           });
 
           if (quotaError) {
             console.error(`[CheckWeather] 額度保留失敗 (${groupId}):`, quotaError.message);
-            // 釋放剛才取得的推播權
             await supabase.rpc('release_notification_claim', { p_log_id: logId });
             continue;
           }
 
-          // reserve_quota 回傳 table，supabase-js 會回傳陣列
           const row = Array.isArray(quotaResult) ? quotaResult[0] : quotaResult;
           if (!row || !row.reserved) {
             console.warn(`[CheckWeather] 額度耗盡或已熔斷，無法發送氣象推播 (${groupId})。`);
@@ -127,26 +179,49 @@ export default async function handler(req, res) {
             break;
           }
 
-          // 7. 發送推播
+          // 發送推播
           const message = `⚠️ 【環境與氣象預報提醒】\n您關注的清運點「${stop.name}」附近，未來一小時有以下狀況：\n\n${desc}`;
           const pushRes = await sendLinePushMessage(groupId, message);
 
           if (pushRes.ok) {
             notificationsSent++;
+            stopNotified = true;
             console.log(`[CheckWeather] 已發送警報至群組 ${groupId} (站點 ${stop.name})`);
           } else {
             console.error(`[CheckWeather] 發送 LINE 訊息失敗 (${groupId}):`, pushRes.error);
-            // 歸還額度與推播權
             await supabase.rpc('release_notification_claim', { p_log_id: logId });
             await supabase.rpc('release_quota_reservation', { p_month: currentMonth });
           }
         }
       } else {
-         console.log(`[CheckWeather] 站點 ${stop.name} (${stop.stop_id}) 環境指標正常。`);
+        console.log(`[CheckWeather] 站點 ${stop.name} (${stop.stop_id}) 環境指標正常。`);
+      }
+
+      // (3) 更新 weather_check_status 紀錄
+      try {
+        const nowIso = new Date().toISOString();
+        const updatePayload = {
+          stop_id: stop.stop_id,
+          last_checked_at: nowIso,
+        };
+        if (stopNotified) {
+          updatePayload.last_notified_at = nowIso;
+        } else if (status?.last_notified_at) {
+          updatePayload.last_notified_at = status.last_notified_at;
+        }
+        await supabase.from('weather_check_status').upsert(updatePayload);
+      } catch (statusErr) {
+        console.error(`[CheckWeather] 更新 weather_check_status 失敗 (${stop.stop_id}):`, statusErr.message);
       }
     }
 
-    return res.status(200).json({ ok: true, checkedStops: stopMap.size, notificationsSent });
+    return res.status(200).json({
+      ok: true,
+      totalStops: stopMap.size,
+      checkedStops,
+      skippedStops,
+      notificationsSent
+    });
 
   } catch (err) {
     console.error(`[CheckWeather] 執行過程發生錯誤:`, err.message);

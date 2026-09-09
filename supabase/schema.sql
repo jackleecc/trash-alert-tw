@@ -197,3 +197,26 @@ CREATE TABLE IF NOT EXISTS public.daily_status (
 INSERT INTO public.system_quota (month, used_count, is_melted)
 VALUES (TO_CHAR(NOW() AT TIME ZONE 'Asia/Taipei', 'YYYY-MM'), 0, FALSE)
 ON CONFLICT (month) DO NOTHING;
+
+-- 8. 氣象預報查詢狀態追蹤表 (weather_check_status)
+CREATE TABLE IF NOT EXISTS public.weather_check_status (
+    stop_id INTEGER PRIMARY KEY REFERENCES public.stops(id) ON DELETE CASCADE,
+    last_checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_notified_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE FUNCTION public.update_weather_check_status_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_update_weather_check_status ON public.weather_check_status;
+CREATE TRIGGER trg_update_weather_check_status
+BEFORE UPDATE ON public.weather_check_status
+FOR EACH ROW
+EXECUTE FUNCTION public.update_weather_check_status_timestamp();
+

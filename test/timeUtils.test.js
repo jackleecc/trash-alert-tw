@@ -1,6 +1,6 @@
 import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { toTaiwanTime, isWithinServiceWindow } from '../lib/timeUtils.js';
+import { toTaiwanTime, isWithinServiceWindow, isWeatherQuietHours } from '../lib/timeUtils.js';
 
 test('toTaiwanTime - converts UTC date to UTC+8 date properly', () => {
   const utcDate = new Date('2026-09-02T09:00:00Z'); // 09:00 UTC = 17:00 TW
@@ -51,3 +51,24 @@ test('isWithinServiceWindow - boundary conditions', () => {
     global.Date = OriginalDate;
   }
 });
+
+test('isWeatherQuietHours - accurately detects 00:00~06:59 quiet hours', () => {
+  // 00:00 TW (前一天 16:00 UTC) -> true
+  assert.equal(isWeatherQuietHours(new Date('2026-09-02T16:00:00Z')), true);
+
+  // 03:30 TW (前一天 19:30 UTC) -> true
+  assert.equal(isWeatherQuietHours(new Date('2026-09-02T19:30:00Z')), true);
+
+  // 06:59 TW (前一天 22:59 UTC) -> true
+  assert.equal(isWeatherQuietHours(new Date('2026-09-02T22:59:00Z')), true);
+
+  // 07:00 TW (前一天 23:00 UTC) -> false (晨間恢復)
+  assert.equal(isWeatherQuietHours(new Date('2026-09-02T23:00:00Z')), false);
+
+  // 12:00 TW (04:00 UTC) -> false
+  assert.equal(isWeatherQuietHours(new Date('2026-09-03T04:00:00Z')), false);
+
+  // 23:59 TW (15:59 UTC) -> false
+  assert.equal(isWeatherQuietHours(new Date('2026-09-03T15:59:00Z')), false);
+});
+

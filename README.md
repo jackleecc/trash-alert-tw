@@ -84,23 +84,30 @@ Vercel Cron 為備援與每日初始狀態快取：
 
 ---
 
-### 2. 全天候氣象與環境預報流程 (`/api/check-weather`)
+### 2. 氣象與環境預報排程流程 (`/api/check-weather`)
 
 ```text
-每 30 分鐘自動排程觸發
+每 30 分鐘自動排程觸發 (避開台灣夜間 00:00~07:00 靜音期)
   │
   ├─► 驗證 CRON_SECRET
-  ├─► 查詢 Supabase 取得所有啟用中群組所訂閱之清運點座標 (lat, lng)
-  ├─► 站點去重：相同清運點只向 Open-Meteo 查詢一次，節省頻寬與降低延遲
-  ├─► 評估異常指標：
-  │      • 降雨：預估雨量 ≥ 0.1mm 或降雨機率 > 30%
+  ├─► 檢查夜間靜音時段 (00:00~07:00)：若處於靜音時段直接略過
+  ├─► 查詢 Supabase 取得啟用中群組所訂閱之清運點座標 (lat, lng)
+  ├─► 站點去重：相同清運點只向 Open-Meteo 查詢一次
+  ├─► 動態冷卻檢查 (weather_check_status)：
+  │      • 若上次發送過通知：冷卻 6 小時 (360 分鐘) 後方可再次查詢
+  │      • 若上次查詢未發通知：冷卻 3 小時 (180 分鐘) 後方可再次查詢
+  ├─► 呼叫 Open-Meteo 評估異常指標：
+  │      • 降雨：降雨機率 ≥ 60%
   │      • 紫外線：UV Index ≥ 8（危險 / 極危險級）
   │      • 空氣品質：PM2.5 ≥ 35.5 μg/m³（橘害敏感族群警示）
+  │      （單次推播整合所有異常指標，共用 1 次額度與冷卻鎖）
   │
-  └─► 達標推播：
-         ├─ 透過 claim_notification 設定 6 小時（360 分鐘）長冷卻期
-         ├─ 扣抵 LINE system_quota
-         └─ 推播提醒群組提早備傘或佩戴口罩
+  ├─► 達標推播：
+  │      ├─ 透過 claim_notification 設定 6 小時長冷卻鎖
+  │      ├─ 扣抵 LINE system_quota
+  │      └─ 推播提醒群組提早備傘或佩戴口罩
+  │
+  └─► 更新 weather_check_status 紀錄本次查詢與通知時間戳
 ```
 
 ---
@@ -151,6 +158,11 @@ Vercel Cron 為備援與每日初始狀態快取：
    - `is_paused` (BOOLEAN)：是否因連續失敗暫停當日檢核。
 8. **`route_linids`**：官方動態 Linid 自動觀測與信任對照表。
    - 記錄官方代碼與本地路線代碼的觀測次數 (`observed_count`) 與最近觀測時間。
+9. **`weather_check_status`**：氣象預報查詢與通知狀態追蹤表。
+   - `stop_id` (PK, INTEGER)：關聯清運站點。
+   - `last_checked_at` (TIMESTAMPTZ)：上次向 Open-Meteo 查詢時間。
+   - `last_notified_at` (TIMESTAMPTZ)：上次成功發送推播時間。
+   - 實現未通知 3 小時 / 已通知 6 小時之動態查詢冷卻機制。
 
 ### 核心預存程序 (Stored Procedures)
 
@@ -181,7 +193,7 @@ Vercel Cron 為備援與每日初始狀態快取：
 請準備好垃圾袋前往站點等候！
 ```
 
-### 2. 獨立環境與氣象預警（每 30 分鐘檢測）
+### 2. 獨立環境與氣象預警（日間排程檢測）
 ```text
 ⚠️ 【環境與氣象預報提醒】
 您關注的清運點「汐萬路一段333巷口」附近，未來一小時有以下狀況：
@@ -198,11 +210,11 @@ Vercel Cron 為備援與每日初始狀態快取：
 
 1. **外部定時器服務 (推薦: [cron-job.org](https://cron-job.org))**
    - 設定於清運時段（台灣時間 17:00 ~ 21:59）每分鐘呼叫 `/api/check-trucks`。
-   - 設定全天每 30 分鐘呼叫 `/api/check-weather`。
+   - 設定日間每 30 分鐘呼叫 `/api/check-weather`（夜間 00:00~07:00 程式端自動靜音略過）。
    - Header 帶入：`Authorization: Bearer <CRON_SECRET>`。
 2. **GitHub Actions ([.github/workflows/weather-trigger.yml](.github/workflows/weather-trigger.yml))**
-   - 排程：`*/30 * * * *`。
-   - 每 30 分鐘自動執行氣象預警偵測。
+   - 排程：`*/30 23,0-15 * * *`（對應台灣時間 07:00~23:59）。
+   - 每 30 分鐘自動執行氣象預警偵測（具備 3 小時未通知 / 6 小時已通知之動態冷卻保護）。
 3. **Vercel Cron ([vercel.json](vercel.json))**
    - 每日 17:00（UTC 09:00）作為備援心跳觸發。
 
