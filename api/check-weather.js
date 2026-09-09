@@ -20,7 +20,7 @@ import { checkUpcomingRain } from '../lib/weatherApi.js';
 import { getTaiwanNow, isWeatherQuietHours } from '../lib/timeUtils.js';
 
 const COOLDOWN_NOTIFIED_MS = 6 * 60 * 60 * 1000; // 發送過通知：冷卻 6 小時
-const COOLDOWN_UNNOTIFIED_MS = 3 * 60 * 60 * 1000; // 查詢但未通知：冷卻 3 小時
+const COOLDOWN_UNNOTIFIED_MS = 25 * 60 * 1000; // 查詢但未通知：冷卻 30 分鐘 (保留 25 分鐘排程抖動緩衝)
 
 /**
  * 安全字串比對，防禦 Timing Attack
@@ -128,11 +128,11 @@ export default async function handler(req, res) {
         }
       }
 
-      // (2) 若距前次查詢未滿 3 小時，跳過查詢
+      // (2) 若距前次查詢未滿 30 分鐘，跳過查詢
       if (status?.last_checked_at) {
         const lastCheckedMs = new Date(status.last_checked_at).getTime();
         if (nowMs - lastCheckedMs < COOLDOWN_UNNOTIFIED_MS) {
-          console.log(`[CheckWeather] 站點 ${stop.name} (${stop.stop_id}) 距前次查詢未滿 3 小時，略過查詢。`);
+          console.log(`[CheckWeather] 站點 ${stop.name} (${stop.stop_id}) 距前次查詢未滿 30 分鐘，略過查詢。`);
           skippedStops++;
           continue;
         }

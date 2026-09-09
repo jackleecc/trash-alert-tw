@@ -95,7 +95,7 @@ Vercel Cron 為備援與每日初始狀態快取：
   ├─► 站點去重：相同清運點只向 Open-Meteo 查詢一次
   ├─► 動態冷卻檢查 (weather_check_status)：
   │      • 若上次發送過通知：冷卻 6 小時 (360 分鐘) 後方可再次查詢
-  │      • 若上次查詢未發通知：冷卻 3 小時 (180 分鐘) 後方可再次查詢
+  │      • 若上次查詢未發通知：冷卻 30 分鐘後方可再次查詢（每 30 分鐘常態監控）
   ├─► 呼叫 Open-Meteo 評估異常指標：
   │      • 降雨：降雨機率 ≥ 60%
   │      • 紫外線：UV Index ≥ 8（危險 / 極危險級）
@@ -162,7 +162,7 @@ Vercel Cron 為備援與每日初始狀態快取：
    - `stop_id` (PK, INTEGER)：關聯清運站點。
    - `last_checked_at` (TIMESTAMPTZ)：上次向 Open-Meteo 查詢時間。
    - `last_notified_at` (TIMESTAMPTZ)：上次成功發送推播時間。
-   - 實現未通知 3 小時 / 已通知 6 小時之動態查詢冷卻機制。
+   - 實現未通知 30 分鐘 / 已通知 6 小時之動態查詢冷卻機制。
 
 ### 核心預存程序 (Stored Procedures)
 
@@ -214,7 +214,7 @@ Vercel Cron 為備援與每日初始狀態快取：
    - Header 帶入：`Authorization: Bearer <CRON_SECRET>`。
 2. **GitHub Actions ([.github/workflows/weather-trigger.yml](.github/workflows/weather-trigger.yml))**
    - 排程：`*/30 23,0-15 * * *`（對應台灣時間 07:00~23:59）。
-   - 每 30 分鐘自動執行氣象預警偵測（具備 3 小時未通知 / 6 小時已通知之動態冷卻保護）。
+   - 每 30 分鐘自動執行氣象預警偵測（具備 30 分鐘未通知 / 6 小時已通知之動態冷卻保護）。
 3. **Vercel Cron ([vercel.json](vercel.json))**
    - 每日 17:00（UTC 09:00）作為備援心跳觸發。
 

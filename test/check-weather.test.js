@@ -59,7 +59,7 @@ test('check-weather - skips execution during quiet hours (00:00~07:00)', async (
   }
 });
 
-test('check-weather - respects 3h (unnotified) and 6h (notified) cooldowns', async () => {
+test('check-weather - respects 30m (unnotified) and 6h (notified) cooldowns', async () => {
   const originalSecret = process.env.CRON_SECRET;
   process.env.CRON_SECRET = 'valid-secret';
 
@@ -77,9 +77,9 @@ test('check-weather - respects 3h (unnotified) and 6h (notified) cooldowns', asy
   };
 
   // 模擬資料庫訂閱資料：有 3 個站點
-  // 站點 101: 2 小時前剛查過未通知 -> 仍在 3 小時冷卻期內 -> 略過
+  // 站點 101: 15 分鐘前剛查過未通知 -> 仍在 30 分鐘冷卻期內 -> 略過
   // 站點 102: 4 小時前查過有通知 -> 仍在 6 小時冷卻期內 -> 略過
-  // 站點 103: 4 小時前查過未通知 -> 超過 3 小時 -> 執行查詢
+  // 站點 103: 40 分鐘前查過未通知 -> 超過 30 分鐘 -> 執行查詢
   const mockSubs = [
     {
       group_id: 'G1',
@@ -104,7 +104,7 @@ test('check-weather - respects 3h (unnotified) and 6h (notified) cooldowns', asy
   const mockWeatherStatus = [
     {
       stop_id: 101,
-      last_checked_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 小時前
+      last_checked_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(), // 15 分鐘前 (< 30m)
       last_notified_at: null
     },
     {
@@ -114,7 +114,7 @@ test('check-weather - respects 3h (unnotified) and 6h (notified) cooldowns', asy
     },
     {
       stop_id: 103,
-      last_checked_at: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(), // 4 小時前 (滿3h)
+      last_checked_at: new Date(Date.now() - 40 * 60 * 1000).toISOString(), // 40 分鐘前 (滿30m)
       last_notified_at: null
     }
   ];
