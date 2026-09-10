@@ -18,7 +18,7 @@ test('getIsoDayOfWeek - converts UTC day properly', () => {
 });
 
 test('isWithinScheduleWindow - handles window logic correctly', () => {
-  // 表定 19:30:00，預設前 20 分鐘 (19:10) 到 後 40 分鐘 (20:10)
+  // 表定 19:30:00，預設前 10 分鐘 (19:20) 到 後 40 分鐘 (20:10)
   const sched = '19:30:00';
 
   // 1. 提早 10 分鐘 (19:20) -> true
@@ -27,8 +27,8 @@ test('isWithinScheduleWindow - handles window logic correctly', () => {
   // 2. 延後 25 分鐘 (19:55) -> true
   assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 55 }), true);
 
-  // 3. 提早 25 分鐘 (19:05) -> false (超過 20 分鐘)
-  assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 5 }), false);
+  // 3. 提早 15 分鐘 (19:15) -> false (超過 10 分鐘提前門檻，防止出庫路過)
+  assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 15 }), false);
 
   // 4. 延後 45 分鐘 (20:15) -> false (超過 40 分鐘)
   assert.equal(isWithinScheduleWindow(sched, { hour: 20, minute: 15 }), false);
@@ -37,6 +37,7 @@ test('isWithinScheduleWindow - handles window logic correctly', () => {
   assert.equal(isWithinScheduleWindow(null, { hour: 17, minute: 0 }), true);
   assert.equal(isWithinScheduleWindow('', { hour: 17, minute: 0 }), true);
 });
+
 
 test('formatArrivalMessage - contains expected structured fields and maps link', () => {
   const msg = formatArrivalMessage({
@@ -106,3 +107,98 @@ test('findNearbyTruckArrivals - ignores recycling trucks and respects schedule w
   );
   assert.equal(recyclingArrivals.length, 0);
 });
+
+test('findNearbyTruckArrivals - filters out cruising drive-by trucks by speed threshold', () => {
+  const stops = [
+    { id: 1, route_id: 'R1', name: '測試站', lat: 25.0, lng: 121.5, radius_meters: 150 },
+  ];
+  const subscribers = new Map([['1', new Set(['G1'])]]);
+  const routes = new Map([['R1', { id: 'R1', name: '路線1' }]]);
+
+  // 1. 車輛時速 40 km/h (巡航路過) -> 應被時速過濾阻擋
+  const fastArrivals = findNearbyTruckArrivals(
+    [{ route_id: 'R1', car_id: 'CRUISING-CAR', lat: 25.0005, lng: 121.5, speed: 40 }],
+    stops,
+    subscribers,
+    routes
+  );
+  assert.equal(fastArrivals.length, 0);
+
+  // 2. 車輛時速 12 km/h (低速收運中) -> 應正常通過
+  const slowArrivals = findNearbyTruckArrivals(
+    [{ route_id: 'R1', car_id: 'SLOW-COLLECTING-CAR', lat: 25.0005, lng: 121.5, speed: 12 }],
+    stops,
+    subscribers,
+    routes
+  );
+  assert.equal(slowArrivals.length, 1);
+});
+
+test('findNearbyTruckArrivals - filters out trucks moving in opposite direction', () => {
+  const stops = [
+    { id: 1, route_id: 'R1', name: '由北往南收運站', lat: 25.076, lng: 121.650, approach_direction: 'southbound' },
+  ];
+  const subscribers = new Map([['1', new Set(['G1'])]]);
+  const routes = new Map([['R1', { id: 'R1', name: '路線1' }]]);
+
+  // 1. 朝北行駛 (出庫車，is_southbound: false) -> 應被排除
+  const northboundArrivals = findNearbyTruckArrivals(
+    [{ route_id: 'R1', car_id: 'DEPOT-EXIT-TRUCK', lat: 25.0765, lng: 121.650, is_southbound: false }],
+    stops,
+    subscribers,
+    routes
+  );
+  assert.equal(northboundArrivals.length, 0);
+
+  // 2. 朝南行駛 (收運正線，is_southbound: true) -> 應放行
+  const southboundArrivals = findNearbyTruckArrivals(
+    [{ route_id: 'R1', car_id: 'SERVICE-TRUCK', lat: 25.0765, lng: 121.650, is_southbound: true }],
+    stops,
+    subscribers,
+    routes
+  );
+  assert.equal(southboundArrivals.length, 1);
+});
+
+test('findNearbyTruckArrivals - respects adaptive radius for dense stops', () => {
+  // 模擬汐萬路一段333巷口 (id: 17) 與相鄰 343巷口 (id: 16, 距 153m)
+  const stops = [
+    { id: 16, route_id: '221010', name: '343巷口', lat: 25.077625, lng: 121.649992 },
+    { id: 17, route_id: '221010', name: '333巷口', lat: 25.076252, lng: 121.649942 },
+  ];
+  const subscribers = new Map([['17', new Set(['G1'])]]);
+  const routes = new Map([['221010', { id: '221010', name: '第1區路線' }]]);
+
+  // 車輛距離 333 巷口 196 公尺 (如 19:36 出庫位置)：
+  // 在舊的 250m 半徑下會觸發；但在新的自適應 120m 半徑下，應精準被阻絕！
+  const truckAt196m = {
+    route_id: '221010',
+    car_id: 'KEU-3231',
+    lat: 25.0745, // 距 333 巷口約 196m
+    lng: 121.649942,
+  };
+
+  const arrivalsAt196m = findNearbyTruckArrivals(
+    [truckAt196m],
+    stops,
+    subscribers,
+    routes
+  );
+  assert.equal(arrivalsAt196m.length, 0, '196m 處應被自適應 120m 圍欄阻斷');
+
+  // 車輛到達 80 公尺處 (如 19:56 真到站)：應放行
+  const truckAt80m = {
+    route_id: '221010',
+    car_id: 'KEU-3231',
+    lat: 25.07555,
+    lng: 121.649942,
+  };
+  const arrivalsAt80m = findNearbyTruckArrivals(
+    [truckAt80m],
+    stops,
+    subscribers,
+    routes
+  );
+  assert.equal(arrivalsAt80m.length, 1, '80m 處應順利觸發到站通知');
+});
+
