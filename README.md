@@ -80,7 +80,7 @@ Vercel Cron 為備援與每日初始狀態快取：
   │
   └─► [推播與額度控管]
          ├─ 呼叫 claim_notification 取得 30 分鐘防洗版冷卻鎖
-         ├─ 呼叫 reserve_quota 保留當月 LINE 推播額度（達 195 則自動熔斷保護）
+         ├─ 呼叫 reserve_quota 保留當月 LINE 推播額度（達 200 則上限自動熔斷保護）
          └─ 發送整合 Google Maps 站點導航連結與即時天氣提醒的 LINE 到站訊息（發送失敗自動歸還額度與冷卻鎖）
 ```
 
@@ -180,7 +180,7 @@ Vercel Cron 為備援與每日初始狀態快取：
 6. **`system_quota`**：LINE 官方帳號免費額度控管。
    - `month` (PK, 'YYYY-MM')：統計月份。
    - `used_count` (INTEGER)：當月已發送則數。
-   - `is_melted` (BOOLEAN)：熔斷旗標（達到 195 則時啟動）。
+   - `is_melted` (BOOLEAN)：熔斷旗標（達到 200 則時啟動）。
 7. **`daily_status`**：每日快取狀態。
    - `date` (PK, DATE)：日期。
    - `suspended_cities` (TEXT[])：當日停止清運的縣市清單。
@@ -198,7 +198,7 @@ Vercel Cron 為備援與每日初始狀態快取：
 
 * **`claim_notification(...)`**：使用 PostgreSQL `pg_advisory_xact_lock` 進行原子排他鎖定，確認處於冷卻期外後寫入 `notification_logs` 並回傳 Log ID，阻斷高併發重複推播。
 * **`release_notification_claim(p_log_id)`**：推播失敗時釋放通知鎖。
-* **`reserve_quota(p_month)`**：原子遞增當月推播計數，並於達到 195 則時回傳 `newly_melted=true` 觸發緊急告警。
+* **`reserve_quota(p_month)`**：原子遞增當月推播計數，並於達到 200 則時回傳 `newly_melted=true` 觸發緊急告警。
 * **`release_quota_reservation(p_month)`**：推播失敗時安全扣回已計入的額度。
 * **`observe_route_linid(p_route_id, p_linid)`**：記錄並累積官方即時車輛於該站點出現之頻次。
 

@@ -19,7 +19,7 @@ test('quotaService - getYearMonth formats YYYY-MM correctly', () => {
 });
 
 test('quotaService - constants match specification', () => {
-  assert.equal(MELT_THRESHOLD, 195);
+  assert.equal(MELT_THRESHOLD, 200);
   assert.equal(MAX_MONTHLY_QUOTA, 200);
 });
 
@@ -81,7 +81,7 @@ test('checkQuotaStatus - melts when reaching threshold', async () => {
   mock.method(supabase, 'from', () => ({
     select: () => ({
       eq: () => ({
-        maybeSingle: async () => ({ data: { month: '2026-09', used_count: 195, is_melted: false }, error: null })
+        maybeSingle: async () => ({ data: { month: '2026-09', used_count: 200, is_melted: false }, error: null })
       })
     }),
     update: (data) => {
@@ -109,7 +109,7 @@ test('consumeQuota - updates count and triggers melt if needed', async () => {
   mock.method(supabase, 'from', () => ({
     select: () => ({
       eq: () => ({
-        maybeSingle: async () => ({ data: { month: '2026-09', used_count: 194, is_melted: false }, error: null })
+        maybeSingle: async () => ({ data: { month: '2026-09', used_count: 199, is_melted: false }, error: null })
       })
     }),
     update: (data) => {
@@ -121,8 +121,8 @@ test('consumeQuota - updates count and triggers melt if needed', async () => {
 
   try {
     const count = await consumeQuota('2026-09', 1);
-    assert.equal(count, 195);
-    assert.equal(updatedCount, 195);
+    assert.equal(count, 200);
+    assert.equal(updatedCount, 200);
     assert.equal(updatedMelted, true);
   } finally {
     process.env.DRY_RUN = originalDryRun;

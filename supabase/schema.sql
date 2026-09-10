@@ -152,15 +152,15 @@ BEGIN
 
     UPDATE public.system_quota AS sq
     SET used_count = sq.used_count + 1,
-        is_melted = sq.used_count + 1 >= 195
+        is_melted = sq.used_count + 1 >= 200
     WHERE sq.month = p_month
-      AND sq.used_count < 195
+      AND sq.used_count < 200
     RETURNING sq.used_count INTO v_used;
 
     IF FOUND THEN
         reserved := TRUE;
         used_count := v_used;
-        newly_melted := (v_used = 195);
+        newly_melted := (v_used = 200);
         RETURN NEXT;
     ELSE
         SELECT FALSE, sq.used_count, FALSE
@@ -178,7 +178,7 @@ LANGUAGE sql
 AS $$
     UPDATE public.system_quota
     SET used_count = GREATEST(used_count - 1, 0),
-        is_melted = used_count - 1 >= 195
+        is_melted = used_count - 1 >= 200
     WHERE month = p_month;
 $$;
 
