@@ -6,6 +6,7 @@ import {
   NTPC_TRUCK_API_URL,
   KCG_TRUCK_API_URL,
   TAOYUAN_TRUCK_API_URL,
+  TAINAN_TRUCK_API_URL,
 } from '../lib/truckApi.js';
 
 import { supabase } from '../lib/supabaseClient.js';
@@ -28,7 +29,7 @@ test('fetchTrucksWithRetry - success on first try', async () => {
   try {
     const res = await fetchTrucksWithRetry('2026-09-02');
     assert.equal(res.ok, true);
-    assert.equal(res.data.length, 3);
+    assert.equal(res.data.length, 4);
     assert.equal(res.data[0].route_id, 'R1');
     assert.equal(res.retryCount, 0);
   } finally {
@@ -94,8 +95,16 @@ test('getTargetApiUrls - filters URLs dynamically based on target cities', () =>
     const multiCities = getTargetApiUrls(undefined, ['新北市', '桃園市']);
     assert.deepEqual(multiCities, [NTPC_TRUCK_API_URL, TAOYUAN_TRUCK_API_URL]);
 
+    const tainanOnly = getTargetApiUrls(undefined, ['台南市']);
+    assert.deepEqual(tainanOnly, [TAINAN_TRUCK_API_URL]);
+
     const defaultAll = getTargetApiUrls(undefined, []);
-    assert.deepEqual(defaultAll, [KCG_TRUCK_API_URL, NTPC_TRUCK_API_URL, TAOYUAN_TRUCK_API_URL]);
+    assert.deepEqual(defaultAll, [
+      KCG_TRUCK_API_URL,
+      NTPC_TRUCK_API_URL,
+      TAOYUAN_TRUCK_API_URL,
+      TAINAN_TRUCK_API_URL,
+    ]);
   } finally {
     if (originalEnv !== undefined) {
       process.env.TRUCK_API_URL = originalEnv;

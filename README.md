@@ -26,7 +26,8 @@
 | **車輛動態 (高雄市)** | 高雄市政府環保局開放資料 | [高雄市垃圾車即時動態 API](https://api.kcg.gov.tw/api/service/Get/aaf4ce4b-4ca8-43de-bfaf-6dc97e89cac0)<br>• 提供車號、路線代碼、即時 GPS 經緯度、清運時間戳記。 |
 | **車輛動態 (新北市)** | 新北市政府環保局開放資料 | [新北市垃圾清運點即時位置 API](https://data.ntpc.gov.tw/api/datasets/28ab4122-60e1-4065-98e5-abccb69aaca6/json?page=0&size=5000)<br>• 涵蓋汐止區、板橋區等全區即時車輛動態資料。 |
 | **車輛動態 (桃園市)** | 桃園市政府環境管理處 | [桃園市垃圾清運路線即時查詢系統](https://route.tyoem.gov.tw/api/trucks)<br>• 支援桃園全區清運動態（預設端點支援 `TAOYUAN_TRUCK_API_URL` 自訂覆寫；欄位已相容 `RouteNo`、`VehicleNo`、`px/py` 等規格）。 |
-| **天然災害停班課** | 行政院人事行政總處 (DGPA) | [天然災害停止上班及上課情形](https://www.dgpa.gov.tw/typh/daily/nds.html)<br>• 即時爬蟲解析颱風/豪雨停班停課公告，支援多縣市（高雄市、新北市、桃園市等）個別判定。 |
+| **車輛動態 (台南市)** | 臺南市政府環境保護局開放資料 | [臺南市垃圾車 GPS 即時服務 API](https://soa.tainan.gov.tw/Api/Service/Get/2c8a70d5-06f2-4353-9e92-c40d33bcd969)<br>• 支援台南市永康區等全區即時清運動態（預設端點支援 `TAINAN_TRUCK_API_URL` 自訂覆寫；欄位相容 `linid`、`car`、`x/y` 等規格）。 |
+| **天然災害停班課** | 行政院人事行政總處 (DGPA) | [天然災害停止上班及上課情形](https://www.dgpa.gov.tw/typh/daily/nds.html)<br>• 即時爬蟲解析颱風/豪雨停班停課公告，支援多縣市（高雄市、新北市、桃園市、台南市等）個別判定。 |
 | **即時氣象與空氣品質** | Open-Meteo 氣象預報生態系 | 1. [Weather Forecast API](https://api.open-meteo.com/v1/forecast)：精準依站點經緯度查詢未來 1 小時降雨量、降雨機率與紫外線 (UV Index)。<br>2. [Air Quality API](https://air-quality-api.open-meteo.com/v1/air-quality)：即時取得細懸浮微粒 (PM2.5) 濃度。 |
 | **即時通訊推播平台** | LINE Messaging API | 1. `https://api.line.me/v2/bot/message/push`：主動向指定群組發送到站警報與氣象通知。<br>2. `https://api.line.me/v2/bot/message/reply`：Webhook 零額度回覆群組 ID。<br>3. 系統廣播：熔斷告警與連續失敗通知。 |
 | **資料庫與 RPC 引擎** | Supabase (PostgreSQL 15+) | 專案實體：`https://tjltndxwhxjfsgmkjmnd.supabase.co`<br>• 存放空間地理資訊、群組綁定、冷卻狀態鎖與月用量原子扣抵。 |
@@ -65,7 +66,7 @@ Vercel Cron 為備援與每日初始狀態快取：
   ├─► [防禦層 3] DGPA 停班停課 Lazy Load 快取（查詢 daily_status）
   │      └─ 若當日已宣布該縣市天災停收，則略過該縣市路線，避免無效運算
   │
-  ├─► [資料抓取] 平行抓取高雄市、新北市與桃園市環保局即時 API（支援逾時重試、指數退避與 Schema 正規化）
+  ├─► [資料抓取] 平行抓取高雄市、新北市、桃園市與台南市環保局即時 API（支援逾時重試、指數退避與 Schema 正規化）
   │      └─ 連續失敗達 3 次時自動標記 is_paused 並推播管理告警
   │
   ├─► [核心運算與比對]
@@ -159,7 +160,7 @@ Vercel Cron 為備援與每日初始狀態快取：
 1. **`routes`**：清運路線清單。
    - `id` (PK, TEXT)：路線代號（例如 `LZ01`、`221010`）。
    - `name` (TEXT)：路線名稱。
-   - `city` (TEXT)：歸屬縣市（例如 `高雄市`、`新北市`、`桃園市`），供天災停班課比對。
+   - `city` (TEXT)：歸屬縣市（例如 `高雄市`、`新北市`、`桃園市`、`台南市`），供天災停班課比對。
    - `active_days` (INTEGER[])：每週出車日（預設 `{1,2,4,5,6}`，排除週三、週日）。
    - `is_active` (BOOLEAN)：是否啟用。
 2. **`stops`**：清運站點與座標。

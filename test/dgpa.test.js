@@ -94,6 +94,26 @@ test('parseSuspensionForCity - exclusion pattern per city', () => {
   assert.equal(parseSuspensionForCity(html, '新北市'), false);
 });
 
+test('parseSuspensionForCity - detects Tainan City suspension with 臺/台 variants', () => {
+  const htmlTai = `
+    <tr>
+      <td class="table-city">臺南市</td>
+      <td class="table-status">停止上班、停止上課。</td>
+    </tr>
+  `;
+  assert.equal(parseSuspensionForCity(htmlTai, '台南市'), true);
+  assert.equal(parseSuspensionForCity(htmlTai, '臺南市'), true);
+
+  const htmlAlternate = `
+    <tr>
+      <td class="table-city">台南市</td>
+      <td class="table-status">停止上班、停止上課。</td>
+    </tr>
+  `;
+  assert.equal(parseSuspensionForCity(htmlAlternate, '台南市'), true);
+  assert.equal(parseSuspensionForCity(htmlAlternate, '臺南市'), true);
+});
+
 test('parseSuspensionForCity - returns false for null/empty inputs', () => {
   assert.equal(parseSuspensionForCity(null, '高雄市'), false);
   assert.equal(parseSuspensionForCity('', '高雄市'), false);
