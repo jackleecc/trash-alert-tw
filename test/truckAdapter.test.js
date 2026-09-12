@@ -139,3 +139,62 @@ test('adaptTruckData - handles wrapped structures (data, records, items, GeoJSON
   assert.equal(results[1].route_id, 'L3');
   assert.equal(results[1].car_id, 'ABC-123');
 });
+
+test('normalizeTruckRecord - maps clean.tnepb.gov.tw SkyEyes fields (car_licence, linename, wgs_x/y, cartype)', () => {
+  const result = normalizeTruckRecord({
+    car_licence: '218-UW',
+    caption: '文化路36號',
+    dt: '2026-09-12 19:48:31',
+    wgs_x: '120.272993',
+    wgs_y: '23.057070',
+    cartype: 'N',
+    car_id: '976475257',
+    linename: '永康-夜間31',
+  });
+
+  assert.deepEqual(result, {
+    route_id: '永康-夜間31',
+    lat: 23.05707,
+    lng: 120.272993,
+    waste_type: 'garbage',
+    car_id: '218-UW',
+    time: '2026-09-12 19:48:31',
+  });
+});
+
+test('adaptTruckData - unwraps ASP.NET ASMX { d: "{\"DATA\": [...]}" } structures', () => {
+  const asmxData = {
+    d: JSON.stringify({
+      DATA: [
+        {
+          car_licence: '218-UW',
+          caption: '文化路36號',
+          dt: '2026-09-12 19:48:31',
+          x: '120.2616',
+          y: '23.0169',
+          cartype: 'N',
+          car_id: '976475257',
+          linename: '永康-夜間31',
+        },
+        {
+          car_licence: '219-UW',
+          caption: '資源回收',
+          dt: '2026-09-12 19:48:31',
+          x: '120.2616',
+          y: '23.0169',
+          cartype: 'R',
+          car_id: '976475258',
+          linename: '永康-資源回收',
+        },
+      ],
+    }),
+  };
+
+  const results = adaptTruckData(asmxData);
+  assert.equal(results.length, 2);
+  assert.equal(results[0].route_id, '永康-夜間31');
+  assert.equal(results[0].car_id, '218-UW');
+  assert.equal(results[0].waste_type, 'garbage');
+  assert.equal(results[1].waste_type, 'recycling');
+});
+

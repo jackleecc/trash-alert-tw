@@ -123,7 +123,7 @@ test('checkUpcomingRain - accurately bundles rain, UV, and PM2.5 in a single not
         json: async () => ({
           hourly: {
             time: ['2026-09-07T11:00', '2026-09-07T12:00'],
-            pm2_5: [10, 48.0], // > 35.5 (PM2.5 Warning)
+            pm2_5: [10, 75.0], // >= 70 (PM2.5 Warning)
           },
         }),
       };
@@ -167,7 +167,7 @@ test('checkUpcomingRain - accurately parses PM2.5 and UV warnings', async () => 
         json: async () => ({
           hourly: {
             time: ['2026-09-07T11:00', '2026-09-07T12:00'],
-            pm2_5: [10, 45.0], // > 35.5 (Unhealthy for sensitive groups)
+            pm2_5: [10, 70.0], // >= 70 (PM2.5 Warning threshold)
           },
         }),
       };
@@ -233,4 +233,73 @@ test('checkUpcomingRain - correctly identifies dry and normal conditions', async
     globalThis.fetch = originalFetch;
   }
 });
+
+test('checkUpcomingRain - PM2.5 boundary check (69.9 does not trigger, 70.0 triggers)', async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    // 1. 69.9 should NOT trigger warning
+    globalThis.fetch = async (url) => {
+      if (url.includes('air-quality-api')) {
+        return {
+          ok: true,
+          json: async () => ({
+            hourly: {
+              time: ['2026-09-07T11:00', '2026-09-07T12:00'],
+              pm2_5: [10, 69.9],
+            },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          hourly: {
+            time: ['2026-09-07T11:00', '2026-09-07T12:00'],
+            precipitation: [0, 0],
+            precipitation_probability: [0, 0],
+            uv_index: [0, 2],
+          },
+        }),
+      };
+    };
+
+    const resBelow = await checkUpcomingRain(25.0, 121.5);
+    assert.equal(resBelow.pmWarning, false);
+    assert.equal(resBelow.shouldNotify, false);
+
+    // 2. 70.0 SHOULD trigger warning
+    globalThis.fetch = async (url) => {
+      if (url.includes('air-quality-api')) {
+        return {
+          ok: true,
+          json: async () => ({
+            hourly: {
+              time: ['2026-09-07T11:00', '2026-09-07T12:00'],
+              pm2_5: [10, 70.0],
+            },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          hourly: {
+            time: ['2026-09-07T11:00', '2026-09-07T12:00'],
+            precipitation: [0, 0],
+            precipitation_probability: [0, 0],
+            uv_index: [0, 2],
+          },
+        }),
+      };
+    };
+
+    const resExact = await checkUpcomingRain(25.0, 121.5);
+    assert.equal(resExact.pmWarning, true);
+    assert.equal(resExact.shouldNotify, true);
+    assert.ok(resExact.desc.includes('PM2.5 濃度 70μg/m³ ≥ 70'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 

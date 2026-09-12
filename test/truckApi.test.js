@@ -111,3 +111,20 @@ test('getTargetApiUrls - filters URLs dynamically based on target cities', () =>
     }
   }
 });
+
+test('getTargetApiUrls - targetCities takes precedence over TRUCK_API_URL', () => {
+  const originalEnv = process.env.TRUCK_API_URL;
+  process.env.TRUCK_API_URL = NTPC_TRUCK_API_URL;
+
+  try {
+    const multiCities = getTargetApiUrls(undefined, ['新北市', '台南市']);
+    assert.deepEqual(multiCities, [NTPC_TRUCK_API_URL, TAINAN_TRUCK_API_URL]);
+  } finally {
+    if (originalEnv !== undefined) {
+      process.env.TRUCK_API_URL = originalEnv;
+    } else {
+      delete process.env.TRUCK_API_URL;
+    }
+  }
+});
+
