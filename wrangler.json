@@ -1,0 +1,6 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tainan-truck-proxy",
+  "main": "proxy/cloudflare-worker/worker.js",
+  "compatibility_date": "2024-09-01"
+}
