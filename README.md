@@ -50,23 +50,28 @@ Vercel Serverless (香港 hkg1)
 
 ### 開箱即用代理模組與部署方式
 
-專案已在 [`proxy/`](proxy/) 目錄提供三種完整開箱即用的代理實作範本：
+專案已在 [`proxy/`](proxy/) 目錄提供完整開箱即用的代理實作範本：
 
-| 平台方案 | 目錄位置 | 費用 / 門檻 | 特色與推薦情境 |
+| 平台方案 | 目錄位置 / 入口 | 費用 / 門檻 | 特色與推薦情境 |
 | :--- | :--- | :--- | :--- |
-| **Cloudflare Workers**<br>*(🌟 免費免信用卡首選)* | [`proxy/cloudflare-worker/`](proxy/cloudflare-worker/)<br>搭配專案根目錄 [`wrangler.json`](wrangler.json) | **100% 免費**<br>免綁信用卡<br>每日 100,000 次請求 | **最推薦！** 零成本、免信用卡、可透過 GitHub 連動自動部署，或直接於 Cloudflare Dashboard 網頁貼上部署（2 分鐘搞定）。 |
-| **GCP Cloud Functions**<br>*(原生台灣彰化機房)* | [`proxy/gcp-function/`](proxy/gcp-function/) | 每月 200 萬次免費呼叫<br>*(需綁定信用卡開通)* | 出口為 Google 彰化機房原生台灣 IP (`asia-east1`)，穩定度最高。 |
+| **Google Cloud Functions / Cloud Run**<br>*(🌟 官方首選推薦)* | [`proxy/gcp-function/`](proxy/gcp-function/)<br>搭配專案根目錄 [`Dockerfile`](Dockerfile) | **永久免費**<br>每月 200 萬次免費呼叫<br>*(Google Always Free)* | **官方首選！** 出口為 Google 彰化機房原生台灣 IP (`asia-east1`)，經實測 126ms 穩定秒回，100% 繞過中華電信公家機關境外防火牆。 |
 | **獨立 Node.js 服務**<br>*(原生住宅/伺服器 IP)* | [`proxy/standalone/`](proxy/standalone/) | **100% 免費**<br>免綁信用卡 | 適用於 Zeabur 台灣節點、家中常開主機（搭配 `npx localtunnel` 或 Cloudflare Tunnel 穿透）。 |
+| **Cloudflare Workers**<br>*(備援/實驗性質)* | [`proxy/cloudflare-worker/`](proxy/cloudflare-worker/)<br>搭配 [`wrangler.json`](wrangler.json) | **100% 免費**<br>免綁信用卡 | ⚠️ 免費方案子請求之出口流量易分配至海外節點（如加州 SJC），會遭公家機關 HiNet 防火牆判定境外而阻斷（HTTP 522）。 |
 
-#### 快速部署方式（以 Cloudflare Workers 為例）
-1. **GitHub 連動自動部署**：
-   - 專案根目錄已配置 [`wrangler.json`](wrangler.json)，在 Cloudflare Workers & Pages 綁定此 GitHub 儲存庫即可自動構建上線。
-2. **Dashboard 網頁在線編輯（免連 Git）**：
-   - 前往 Cloudflare Dashboard -> Compute (Workers) -> Create Worker。
-   - 點選「Edit code」，貼入 [`proxy/cloudflare-worker/worker.js`](proxy/cloudflare-worker/worker.js) 內容並 Deploy。
-3. **Vercel 環境變數綁定**：
+#### 快速部署方式（Google Cloud Functions / Cloud Run）
+1. **前往主控台**：登入 [Google Cloud Console](https://console.cloud.google.com/functions)。
+2. **建立服務**：
+   - 名稱：`tainan-proxy`
+   - 區域：**`asia-east1 (台灣/Taiwan)`** ⚠️ *(極為關鍵，確保為台灣彰化機房 IP)*
+   - 驗證：選擇「允許公開存取 (Allow unauthenticated invocations)」
+3. **部署程式碼**：
+   - 執行階段：`Node.js 20`
+   - 進入點 (Entry point)：`tainanProxy`
+   - 將 [`proxy/gcp-function/index.js`](proxy/gcp-function/index.js) 與 [`proxy/gcp-function/package.json`](proxy/gcp-function/package.json) 內容貼入並點選 Deploy。
+   - *(若使用 GitHub 連動持續部署，根目錄已自動配置 [`Dockerfile`](Dockerfile) 支援 Cloud Run 自動構建)*。
+4. **Vercel 環境變數綁定**：
    - 前往 Vercel -> Settings -> Environment Variables。
-   - 新增 `TAINAN_PROXY_URL`，值填入 Worker 網址（例如 `https://tainan-truck-proxy.xxxx.workers.dev`）。
+   - 新增 `TAINAN_PROXY_URL`，值填入取得的服務網址（例如 `https://tainan-proxy-xxxxx.asia-east1.run.app`）。
    - 點選 **Redeploy** 重新部署。
 
 #### 本地驗證代理工具

@@ -42,18 +42,18 @@ GCP 在**台灣彰化 (`asia-east1`)** 設有大型實體機房，出口 IP 屬�
 
 ---
 
-## 方案 2：Cloudflare Worker（最快，免信用卡）
+## 方案 2：Google Cloud Run (搭配專案 Dockerfile 一鍵持續部署)
 
-1. 登入 [Cloudflare Dashboard](https://dash.cloudflare.com/)，點選左側 **Workers & Pages**。
-2. 點擊 **Create application** -> **Create Worker**。
-3. 命名為 `tainan-proxy`，點擊 **Deploy**。
-4. 點擊 **Edit code**，清空原有代碼，將專案內 [`proxy/cloudflare-worker/worker.js`](../proxy/cloudflare-worker/worker.js) 的代碼完整貼上，點擊 **Deploy**。
-5. *(選用密鑰)*：在該 Worker 的 **Settings** -> **Variables and Secrets** -> 新增 `PROXY_SECRET`。
-6. 複製該 Worker 的網址（例如 `https://tainan-proxy.myname.workers.dev`）。
+本專案根目錄已包含標準 [`Dockerfile`](../Dockerfile)，可直接透過 [Google Cloud Run](https://console.cloud.google.com/run) 連接 GitHub 儲存庫：
+1. 進入 [Google Cloud Console - Cloud Run](https://console.cloud.google.com/run)。
+2. 點選「建立服務 (Create Service)」，選擇「從存放區持續部署 (Continuous deployment from repository)」。
+3. 連接此 GitHub 儲存庫 `trash-alert-tw`，建構類型選擇 `Dockerfile`。
+4. 區域選擇 **`asia-east1 (台灣)`**，勾選「允許未驗證的叫用」。
+5. 點擊建立，Cloud Build 將自動依據 `Dockerfile` 建立包含本機代理服務的容器修訂版本。
 
 ---
 
-## 方案 3：Zeabur / 自建 Node.js / Docker
+## 方案 3：Zeabur / 自建 Node.js / Docker（100% 台灣原生住宅 IP）
 
 若您有台灣主機、NAS 或使用台灣原生 PaaS（Zeabur，預設區域為台灣 GCP）：
 * 直接使用專案內 [`proxy/standalone/`](../proxy/standalone/) 目錄。
