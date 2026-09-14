@@ -26,11 +26,59 @@
 | **車輛動態 (高雄市)** | 高雄市政府環保局開放資料 | [高雄市垃圾車即時動態 API](https://api.kcg.gov.tw/api/service/Get/aaf4ce4b-4ca8-43de-bfaf-6dc97e89cac0)<br>• 提供車號、路線代碼、即時 GPS 經緯度、清運時間戳記。 |
 | **車輛動態 (新北市)** | 新北市政府環保局開放資料 | [新北市垃圾清運點即時位置 API](https://data.ntpc.gov.tw/api/datasets/28ab4122-60e1-4065-98e5-abccb69aaca6/json?page=0&size=5000)<br>• 涵蓋汐止區、板橋區等全區即時車輛動態資料。 |
 | **車輛動態 (桃園市)** | 桃園市政府環境管理處 | [桃園市垃圾清運路線即時查詢系統](https://route.tyoem.gov.tw/api/trucks)<br>• 支援桃園全區清運動態（預設端點支援 `TAOYUAN_TRUCK_API_URL` 自訂覆寫；欄位已相容 `RouteNo`、`VehicleNo`、`px/py` 等規格）。 |
-| **車輛動態 (台南市)** | 臺南市政府環境保護局開放資料 | [臺南市垃圾車 GPS 即時服務 API](https://soa.tainan.gov.tw/Api/Service/Get/2c8a70d5-06f2-4353-9e92-c40d33bcd969)<br>• 支援台南市永康區等全區即時清運動態（預設端點支援 `TAINAN_TRUCK_API_URL` 自訂覆寫；欄位相容 `linid`、`car`、`x/y` 等規格）。 |
+| **車輛動態 (台南市)** | 臺南市環保局便民查詢網天眼系統 | [天眼即時車輛 WebService](https://clean.tnepb.gov.tw/WebService/WsSkyeyes.asmx/NewgetCarsinfo)<br>• 支援永康區等全區即時清運動態（相容 `car_licence`、`linename`、`wgs_x/y`、`cartype` 等規格）。<br>• ⚠️ **境外 IP 防火牆對策**：公家機關天眼主機設有嚴格 Geo-IP 防火牆，阻斷境外雲端 IP（如 Vercel 香港節點）。系統支援 `TAINAN_PROXY_URL` 台灣出口代理機制（詳見下方說明）。 |
 | **天然災害停班課** | 行政院人事行政總處 (DGPA) | [天然災害停止上班及上課情形](https://www.dgpa.gov.tw/typh/daily/nds.html)<br>• 即時爬蟲解析颱風/豪雨停班停課公告，支援多縣市（高雄市、新北市、桃園市、台南市等）個別判定。 |
 | **即時氣象與空氣品質** | Open-Meteo 氣象預報生態系 | 1. [Weather Forecast API](https://api.open-meteo.com/v1/forecast)：精準依站點經緯度查詢未來 1 小時降雨量、降雨機率與紫外線 (UV Index)。<br>2. [Air Quality API](https://air-quality-api.open-meteo.com/v1/air-quality)：即時取得細懸浮微粒 (PM2.5) 濃度。 |
 | **即時通訊推播平台** | LINE Messaging API | 1. `https://api.line.me/v2/bot/message/push`：主動向指定群組發送到站警報與氣象通知。<br>2. `https://api.line.me/v2/bot/message/reply`：Webhook 零額度回覆群組 ID。<br>3. 系統廣播：熔斷告警與連續失敗通知。 |
 | **資料庫與 RPC 引擎** | Supabase (PostgreSQL 15+) | 專案實體：`https://tjltndxwhxjfsgmkjmnd.supabase.co`<br>• 存放空間地理資訊、群組綁定、冷卻狀態鎖與月用量原子扣抵。 |
+
+---
+
+## 台灣出口代理伺服器架構 (Taiwan Egress Proxy)
+
+臺南市環保局天眼車輛動態系統主機（`clean.tnepb.gov.tw` / IP `59.120.96.115`，中華電信 HiNet）設有嚴格的 **Geo-IP 境外防火牆**，會靜默丟棄（Silent Drop）來自非台灣境內 IP（例如 AWS、Vercel 香港節點 `hkg1`）的 TCP SYN 封包，導致雲端排程連線逾時。
+
+為徹底解決此問題，本系統在 `lib/truckApi.js` 內建了**台灣出口代理架構**，當設定 `TAINAN_PROXY_URL` 時，自動將臺南即時車輛請求轉由代理端點抓取：
+
+```text
+Vercel Serverless (香港 hkg1)
+        │ (POST / JSON)
+        ▼
+台灣出口代理 (Taiwan Proxy) ───[ 台灣境內 IP / ASN ]───► 臺南市環保局天眼系統 (59.120.96.115)
+(Cloudflare Workers / GCP 彰化 / 本地主機)                      (繞過 Geo-IP 防火牆限制)
+```
+
+### 開箱即用代理模組與部署方式
+
+專案已在 [`proxy/`](proxy/) 目錄提供三種完整開箱即用的代理實作範本：
+
+| 平台方案 | 目錄位置 | 費用 / 門檻 | 特色與推薦情境 |
+| :--- | :--- | :--- | :--- |
+| **Cloudflare Workers**<br>*(🌟 免費免信用卡首選)* | [`proxy/cloudflare-worker/`](proxy/cloudflare-worker/)<br>搭配專案根目錄 [`wrangler.json`](wrangler.json) | **100% 免費**<br>免綁信用卡<br>每日 100,000 次請求 | **最推薦！** 零成本、免信用卡、可透過 GitHub 連動自動部署，或直接於 Cloudflare Dashboard 網頁貼上部署（2 分鐘搞定）。 |
+| **GCP Cloud Functions**<br>*(原生台灣彰化機房)* | [`proxy/gcp-function/`](proxy/gcp-function/) | 每月 200 萬次免費呼叫<br>*(需綁定信用卡開通)* | 出口為 Google 彰化機房原生台灣 IP (`asia-east1`)，穩定度最高。 |
+| **獨立 Node.js 服務**<br>*(原生住宅/伺服器 IP)* | [`proxy/standalone/`](proxy/standalone/) | **100% 免費**<br>免綁信用卡 | 適用於 Zeabur 台灣節點、家中常開主機（搭配 `npx localtunnel` 或 Cloudflare Tunnel 穿透）。 |
+
+#### 快速部署方式（以 Cloudflare Workers 為例）
+1. **GitHub 連動自動部署**：
+   - 專案根目錄已配置 [`wrangler.json`](wrangler.json)，在 Cloudflare Workers & Pages 綁定此 GitHub 儲存庫即可自動構建上線。
+2. **Dashboard 網頁在線編輯（免連 Git）**：
+   - 前往 Cloudflare Dashboard -> Compute (Workers) -> Create Worker。
+   - 點選「Edit code」，貼入 [`proxy/cloudflare-worker/worker.js`](proxy/cloudflare-worker/worker.js) 內容並 Deploy。
+3. **Vercel 環境變數綁定**：
+   - 前往 Vercel -> Settings -> Environment Variables。
+   - 新增 `TAINAN_PROXY_URL`，值填入 Worker 網址（例如 `https://tainan-truck-proxy.xxxx.workers.dev`）。
+   - 點選 **Redeploy** 重新部署。
+
+#### 本地驗證代理工具
+```bash
+# 測試特定代理端點是否能成功抓取並解析臺南車輛資料
+node scripts/testProxy.js <PROXY_URL> [PROXY_SECRET]
+
+# 或直接使用環境變數執行
+TAINAN_PROXY_URL=https://... node scripts/testProxy.js
+```
+
+完整圖文建置 SOP 請參閱：[docs/TAIWAN_PROXY_SETUP.md](docs/TAIWAN_PROXY_SETUP.md)。
 
 ---
 
@@ -275,7 +323,7 @@ Vercel Cron 為備援與每日初始狀態快取：
 本專案全面使用 Node.js 原生測試框架 (`node:test`)：
 
 ```bash
-# 執行全套單元與邊際條件測試 (19 組測試套件，共 96 項測試)
+# 執行全套單元與邊際條件測試 (21 組測試套件，共 111 項測試)
 npm test
 
 # 模擬測試執行 (不實際對外部 LINE 伺服器發送推播)

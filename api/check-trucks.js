@@ -60,11 +60,31 @@ export default async function handler(req, res) {
     return res.status(401).json({ ok: false, reason: 'Unauthorized', triggerSource });
   }
 
-  // ── 防禦層 2：時間窗校驗（二次防線） ────────────────────────────────────
   const taiwanNowInfo = getTaiwanNow();
   const { hour, minute, dateStr } = taiwanNowInfo;
 
-  if (!isWithinServiceWindow()) {
+  // ── 診斷模式：允許已授權 (Bearer CRON_SECRET) 之測試請求診斷代理狀態 ────
+  const isDiagTest = req.query && (req.query.test_proxy === 'true' || req.query.diag === 'true');
+  if (isDiagTest) {
+    console.log(`[Diag] 觸發代理連線診斷測試 (來源: ${triggerSource})...`);
+    const proxyUrl = process.env.TAINAN_PROXY_URL || null;
+    const fetchResult = await fetchTrucksWithRetry(dateStr, undefined, ['台南市']);
+    return res.status(200).json({
+      ok: fetchResult.ok,
+      isDiagTest: true,
+      hasProxyUrl: Boolean(proxyUrl),
+      proxyUrl: proxyUrl ? proxyUrl.slice(0, 20) + '...' : null,
+      recordsCount: fetchResult.data ? fetchResult.data.length : 0,
+      sourceStats: fetchResult.sourceStats,
+      error: fetchResult.error,
+      partialErrors: fetchResult.errors,
+    });
+  }
+
+  // ── 防禦層 2：時間窗校驗（二次防線，支援已授權 force 測試） ───────────────
+  const forceRun = req.query && (req.query.force === 'true' || req.query.bypass_window === 'true');
+
+  if (!isWithinServiceWindow() && !forceRun) {
     console.log(
       `[TimeWindow] 目前台灣時間 ${hour}:${String(minute).padStart(2, '0')}，不在清運時段（17-21），略過執行。`
     );
