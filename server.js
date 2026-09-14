@@ -59,8 +59,8 @@ app.use((req, res) => {
   res.status(404).json({ ok: false, error: 'Not Found', path: req.path });
 });
 
-const server = app.listen(port, '0.0.0.0', () => {
-  console.log(`[Server] trash-alert-tw service successfully listening on 0.0.0.0:${port}`);
+const server = app.listen(port, () => {
+  console.log(`[Server] trash-alert-tw service successfully listening on port ${port}`);
 });
 
 // 優雅關機處理 (Graceful Shutdown)
