@@ -151,8 +151,11 @@ export default async function handler(req, res) {
   );
 
   try {
-    // 智慧過濾：先取得今日活躍的路線與訂閱站點所屬縣市
-    const subContext = await getActiveSubscriptionContext(taiwanNowInfo, suspendedCities);
+    // 智慧過濾：先取得今日活躍的路線與訂閱站點所屬縣市 (落實智慧縮時窗與推播後深度休眠)
+    const subContext = await getActiveSubscriptionContext(taiwanNowInfo, suspendedCities, {
+      bypassWindow: forceRun,
+      bypassSleep: forceRun,
+    });
     if (!subContext.ok) {
       console.error(`[Main] 查詢訂閱上下文失敗: ${subContext.error}`);
       await recordExecutionLog({
@@ -166,17 +169,25 @@ export default async function handler(req, res) {
     }
 
     if (!subContext.hasActiveSubscriptions) {
-      console.log(`[Main] 今日無排定營運之清運路線或活躍群組訂閱，安全略過。`);
+      console.log(
+        `[Main] 今日無活躍訂閱需偵測（原因: ${subContext.reason || 'no-active-subscriptions'}），安全略過。`
+      );
       await recordExecutionLog({
         status: 'skipped',
         reason: subContext.reason || 'no-active-subscriptions',
         triggerSource,
+        details: {
+          sleepingStops: subContext.sleepingStops || [],
+          outOfWindowStops: subContext.outOfWindowStops || [],
+        },
         dateStr,
       });
       return res.status(200).json({
         ok: true,
         skipped: true,
         reason: subContext.reason || 'no-active-subscriptions',
+        sleepingStops: subContext.sleepingStops || [],
+        outOfWindowStops: subContext.outOfWindowStops || [],
         triggerSource,
       });
     }

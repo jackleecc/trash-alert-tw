@@ -1,10 +1,12 @@
-import test from 'node:test';
+import test, { mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { supabase } from '../lib/supabaseClient.js';
 import {
   findNearbyTruckArrivals,
   getIsoDayOfWeek,
   formatArrivalMessage,
   isWithinScheduleWindow,
+  getActiveSubscriptionContext,
 } from '../lib/coreProcessor.js';
 
 test('getIsoDayOfWeek - converts UTC day properly', () => {
@@ -201,4 +203,203 @@ test('findNearbyTruckArrivals - respects adaptive radius for dense stops', () =>
   );
   assert.equal(arrivalsAt80m.length, 1, '80m 處應順利觸發到站通知');
 });
+
+test('isWithinScheduleWindow - supports custom before and after minutes', () => {
+  // 表定 19:42:00，自訂提前 18 分鐘 (19:24) 至 延後 25 分鐘 (20:07)
+  const sched = '19:42:00';
+
+  // 19:23 -> false (提早 19 分鐘，未到 19:24)
+  assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 23 }, 18, 25), false);
+  // 19:24 -> true (恰好提早 18 分鐘)
+  assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 24 }, 18, 25), true);
+  // 19:48 -> true (真正到站時間，延後 6 分鐘)
+  assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 48 }, 18, 25), true);
+  // 20:07 -> true (恰好延後 25 分鐘)
+  assert.equal(isWithinScheduleWindow(sched, { hour: 20, minute: 7 }, 18, 25), true);
+  // 20:08 -> false (延後 26 分鐘，超過窗口)
+  assert.equal(isWithinScheduleWindow(sched, { hour: 20, minute: 8 }, 18, 25), false);
+});
+
+test('getActiveSubscriptionContext - smart window filters stops outside window (prevents high frequency polling)', async () => {
+  mock.method(supabase, 'from', (table) => {
+    if (table === 'routes') {
+      return {
+        select: () => ({
+          eq: async () => ({
+            data: [{ id: 'TN_YK', name: '永康區文化路路線', active_days: [3], is_active: true }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'stops') {
+      return {
+        select: () => ({
+          in: async () => ({
+            data: [{ id: 101, route_id: 'TN_YK', name: '文化路40號', lat: 23.0, lng: 120.2, schedule_time: '19:42:00' }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'line_groups') {
+      return {
+        select: () => ({
+          eq: async () => ({
+            data: [{ group_id: 'GRP_YK', is_active: true }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'subscriptions') {
+      return {
+        select: () => ({
+          in: async () => ({
+            data: [{ group_id: 'GRP_YK', stop_id: 101 }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'notification_logs') {
+      return {
+        select: () => ({
+          gte: async () => ({
+            data: [], // 今日尚未推播
+            error: null,
+          }),
+        }),
+      };
+    }
+    return {};
+  });
+
+  try {
+    // 2026-09-02 是週三 (3)
+    // 1. 在時間窗外（18:00）執行：應被智慧縮時窗攔截，activeCities 為空，hasActiveSubscriptions 為 false
+    const ctxOutside = await getActiveSubscriptionContext({
+      now: new Date('2026-09-02T10:00:00Z'), // 18:00 TW
+      hour: 18,
+      minute: 0,
+      dateStr: '2026-09-02',
+    });
+
+    assert.equal(ctxOutside.ok, true);
+    assert.equal(ctxOutside.hasActiveSubscriptions, false);
+    assert.equal(ctxOutside.reason, 'outside-schedule-window');
+    assert.equal(ctxOutside.activeCities.length, 0);
+    assert.equal(ctxOutside.outOfWindowStops.length, 1);
+    assert.equal(ctxOutside.outOfWindowStops[0].name, '文化路40號');
+
+    // 2. 在時間窗內（19:35）執行：應放行，activeCities 包含台南市，hasActiveSubscriptions 為 true
+    const ctxInside = await getActiveSubscriptionContext({
+      now: new Date('2026-09-02T11:35:00Z'), // 19:35 TW
+      hour: 19,
+      minute: 35,
+      dateStr: '2026-09-02',
+    });
+
+    assert.equal(ctxInside.ok, true);
+    assert.equal(ctxInside.hasActiveSubscriptions, true);
+    assert.deepEqual(ctxInside.activeCities, ['台南市']);
+    assert.equal(ctxInside.stops.length, 1);
+    assert.equal(ctxInside.stops[0].id, 101);
+  } finally {
+    mock.restoreAll();
+  }
+});
+
+test('getActiveSubscriptionContext - post-notification deep sleep stops external polling for the rest of today', async () => {
+  mock.method(supabase, 'from', (table) => {
+    if (table === 'routes') {
+      return {
+        select: () => ({
+          eq: async () => ({
+            data: [{ id: 'TN_YK', name: '永康區文化路路線', active_days: [3], is_active: true }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'stops') {
+      return {
+        select: () => ({
+          in: async () => ({
+            data: [{ id: 101, route_id: 'TN_YK', name: '文化路40號', lat: 23.0, lng: 120.2, schedule_time: '19:42:00' }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'line_groups') {
+      return {
+        select: () => ({
+          eq: async () => ({
+            data: [{ group_id: 'GRP_YK', is_active: true }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'subscriptions') {
+      return {
+        select: () => ({
+          in: async () => ({
+            data: [{ group_id: 'GRP_YK', stop_id: 101 }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'notification_logs') {
+      return {
+        select: () => ({
+          gte: async () => ({
+            // 今日 19:48 已推播過給 GRP_YK
+            data: [{ stop_id: 101, group_id: 'GRP_YK' }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    return {};
+  });
+
+  try {
+    // 即使在 19:50（仍處於原時間窗 19:24~20:07 內），但因今日已推播成功，應立即啟動深度休眠！
+    const ctxSleeping = await getActiveSubscriptionContext({
+      now: new Date('2026-09-02T11:50:00Z'), // 19:50 TW
+      hour: 19,
+      minute: 50,
+      dateStr: '2026-09-02',
+    });
+
+    assert.equal(ctxSleeping.ok, true);
+    assert.equal(ctxSleeping.hasActiveSubscriptions, false);
+    assert.equal(ctxSleeping.reason, 'all-subscriptions-sleeping-today');
+    assert.equal(ctxSleeping.activeCities.length, 0);
+    assert.equal(ctxSleeping.sleepingStops.length, 1);
+    assert.equal(ctxSleeping.sleepingStops[0].name, '文化路40號');
+
+    // 當指定 bypassSleep / bypassWindow 時，應可強制執行偵測 (供手動測試排查)
+    const ctxBypass = await getActiveSubscriptionContext(
+      {
+        now: new Date('2026-09-02T11:50:00Z'),
+        hour: 19,
+        minute: 50,
+        dateStr: '2026-09-02',
+      },
+      [],
+      { bypassWindow: true, bypassSleep: true }
+    );
+
+    assert.equal(ctxBypass.ok, true);
+    assert.equal(ctxBypass.hasActiveSubscriptions, true);
+    assert.deepEqual(ctxBypass.activeCities, ['台南市']);
+  } finally {
+    mock.restoreAll();
+  }
+});
+
 
