@@ -21,7 +21,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 健康檢查
-  if (req.url === '/health' || req.url === '/') {
+  if (req.method === 'GET' && (req.url === '/health' || req.url === '/')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: true, service: 'tainan-epa-proxy' }));
   }
