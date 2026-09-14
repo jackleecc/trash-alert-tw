@@ -128,3 +128,48 @@ test('getTargetApiUrls - targetCities takes precedence over TRUCK_API_URL', () =
   }
 });
 
+test('fetchTrucksWithRetry - reports sourceStats and attaches x-proxy-secret when configured', async () => {
+  mock.method(supabase, 'from', () => ({
+    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+    update: () => ({ eq: async () => ({ error: null }) }),
+  }));
+
+  const originalSecret = process.env.TAINAN_PROXY_SECRET;
+  process.env.TAINAN_PROXY_SECRET = 'test-secret-key-123';
+
+  const capturedHeaders = [];
+  const originalFetch = global.fetch;
+  global.fetch = async (url, options) => {
+    capturedHeaders.push({ url, headers: options?.headers, method: options?.method });
+    return {
+      ok: true,
+      text: async () =>
+        JSON.stringify({
+          data: [{ linid: 'R1', x: '120.3', y: '22.6', car: 'CAR1', time: '2026-09-02T17:00:00' }],
+        }),
+    };
+  };
+
+  try {
+    const res = await fetchTrucksWithRetry('2026-09-02', undefined, ['台南市']);
+    assert.equal(res.ok, true);
+    assert.ok(Array.isArray(res.sourceStats));
+    assert.equal(res.sourceStats.length, 1);
+    assert.equal(res.sourceStats[0].ok, true);
+
+    // 驗證是否有帶入 x-proxy-secret
+    const tainanCall = capturedHeaders.find((c) => c.url === TAINAN_TRUCK_API_URL);
+    assert.ok(tainanCall, '應有呼叫台南端點');
+    assert.equal(tainanCall.method, 'POST');
+    assert.equal(tainanCall.headers['x-proxy-secret'], 'test-secret-key-123');
+  } finally {
+    if (originalSecret !== undefined) {
+      process.env.TAINAN_PROXY_SECRET = originalSecret;
+    } else {
+      delete process.env.TAINAN_PROXY_SECRET;
+    }
+    global.fetch = originalFetch;
+    mock.restoreAll();
+  }
+});
+
