@@ -164,7 +164,7 @@ export default async function handler(req, res) {
     console.log(`[Main] 今日有訂閱之目標縣市：${subContext.activeCities.join('、')}，啟動專屬精準抓取...`);
 
     // Task 4：外部 API Adapter（依目標縣市精準抓取，非訂閱縣市完全不連線）
-    const { ok, data: truckData, paused, retryCount, error: fetchErr } =
+    const { ok, data: truckData, paused, retryCount, error: fetchErr, errors: partialErrors, sourceStats } =
       await fetchTrucksWithRetry(dateStr, undefined, subContext.activeCities);
 
     if (!ok) {
@@ -176,7 +176,7 @@ export default async function handler(req, res) {
         reason: paused ? 'api-retry-paused' : 'api-fetch-failed',
         triggerSource,
         recordsCount: 0,
-        details: { retryCount, error: fetchErr },
+        details: { retryCount, error: fetchErr, sourceStats: sourceStats || [] },
         dateStr,
       });
       return res.status(200).json({
@@ -185,6 +185,7 @@ export default async function handler(req, res) {
         reason: paused ? 'api-retry-paused' : 'api-fetch-failed',
         retryCount,
         error: fetchErr,
+        sourceStats: sourceStats || [],
         triggerSource,
       });
     }
@@ -202,13 +203,12 @@ export default async function handler(req, res) {
       })
       .join('; ');
 
-    const executionStatus = (processResult.failedNotifications > 0)
-      ? 'warning'
-      : 'success';
+    const hasErrors = (processResult.failedNotifications > 0) || (partialErrors && partialErrors.length > 0);
+    const executionStatus = hasErrors ? 'warning' : 'success';
 
     await recordExecutionLog({
       status: executionStatus,
-      reason: processResult.reason || 'processed-successfully',
+      reason: processResult.reason || (partialErrors?.length ? 'partial-fetch-error' : 'processed-successfully'),
       triggerSource,
       recordsCount: truckData.length,
       matchedArrivals: processResult.matchedArrivals,
@@ -217,6 +217,8 @@ export default async function handler(req, res) {
         closestSummary,
         closestTrucks: processResult.closestTrucks || [],
         lineErrors: processResult.lineErrors || [],
+        sourceStats: sourceStats || [],
+        partialErrors: partialErrors || [],
       },
       dateStr,
     });
@@ -225,6 +227,9 @@ export default async function handler(req, res) {
       ok: true,
       skipped: false,
       recordsCount: truckData.length,
+      targetCities: subContext.activeCities,
+      sourceStats: sourceStats || [],
+      partialErrors: partialErrors || [],
       matchedArrivals: processResult.matchedArrivals,
       sentNotifications: processResult.sentNotifications,
       failedNotifications: processResult.failedNotifications || 0,
