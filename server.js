@@ -15,8 +15,20 @@ import checkTrucksHandler from './api/check-trucks.js';
 import checkWeatherHandler from './api/check-weather.js';
 import lineWebhookHandler from './api/line-webhook.js';
 
+// 全域未捕捉例外防護，避免容器無日誌靜默退出
+process.on('uncaughtException', (err) => {
+  console.error('[Server] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Server] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const app = express();
 const port = parseInt(process.env.PORT || '8080', 10);
+
+console.log(`[Server] Initializing trash-alert-tw on Node.js ${process.version}...`);
+console.log(`[Server] Configured listening PORT: ${port}`);
 
 // 保留原始 Request Body 以供 LINE Webhook 進行精確 HMAC-SHA256 簽章比對
 app.use(
@@ -28,7 +40,7 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true }));
 
-// 1. 健康檢查與存活探針
+// 1. 健康檢查與存活探針 (Cloud Run Startup / Liveness Check)
 app.get(['/', '/health'], (req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -48,7 +60,7 @@ app.use((req, res) => {
 });
 
 const server = app.listen(port, '0.0.0.0', () => {
-  console.log(`[Server] trash-alert-tw service listening on port ${port}`);
+  console.log(`[Server] trash-alert-tw service successfully listening on 0.0.0.0:${port}`);
 });
 
 // 優雅關機處理 (Graceful Shutdown)
