@@ -223,6 +223,34 @@ export default async function handler(req, res) {
       dateStr,
     });
 
+    // 診斷台南連線能力 (DNS & TCP)
+    let tainanDiag = null;
+    try {
+      const net = await import('node:net');
+      const dns = await import('node:dns').then((m) => m.promises);
+      const dnsRes = await dns.lookup('clean.tnepb.gov.tw');
+      const tcpStart = Date.now();
+      const tcpRes = await new Promise((resolve) => {
+        const socket = net.createConnection(
+          { host: 'clean.tnepb.gov.tw', port: 443, timeout: 4000 },
+          () => {
+            socket.destroy();
+            resolve({ ok: true, elapsedMs: Date.now() - tcpStart });
+          }
+        );
+        socket.on('timeout', () => {
+          socket.destroy();
+          resolve({ ok: false, error: 'TCP timeout (4000ms)', elapsedMs: Date.now() - tcpStart });
+        });
+        socket.on('error', (err) => {
+          resolve({ ok: false, error: err.message, elapsedMs: Date.now() - tcpStart });
+        });
+      });
+      tainanDiag = { ip: dnsRes.address, tcp: tcpRes };
+    } catch (e) {
+      tainanDiag = { error: e.message };
+    }
+
     return res.status(200).json({
       ok: true,
       skipped: false,
@@ -230,6 +258,7 @@ export default async function handler(req, res) {
       targetCities: subContext.activeCities,
       sourceStats: sourceStats || [],
       partialErrors: partialErrors || [],
+      tainanDiag,
       matchedArrivals: processResult.matchedArrivals,
       sentNotifications: processResult.sentNotifications,
       failedNotifications: processResult.failedNotifications || 0,
