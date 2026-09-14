@@ -223,46 +223,6 @@ export default async function handler(req, res) {
       dateStr,
     });
 
-    // 診斷台南連線能力 (Direct IP TCP & Google/Cloudflare DNS Resolver)
-    let tainanDiag = null;
-    try {
-      const net = await import('node:net');
-
-      // 1. Direct TCP to known IP 59.120.96.115:443
-      const tcpStart = Date.now();
-      const ipTcp = await new Promise((resolve) => {
-        const socket = net.createConnection(
-          { host: '59.120.96.115', port: 443, timeout: 3000 },
-          () => {
-            socket.destroy();
-            resolve({ ok: true, elapsedMs: Date.now() - tcpStart });
-          }
-        );
-        socket.on('timeout', () => {
-          socket.destroy();
-          resolve({ ok: false, error: 'Direct IP TCP timeout (3000ms)', elapsedMs: Date.now() - tcpStart });
-        });
-        socket.on('error', (err) => {
-          resolve({ ok: false, error: err.message, elapsedMs: Date.now() - tcpStart });
-        });
-      });
-
-      // 2. Custom DNS Resolver (8.8.8.8 / 1.1.1.1)
-      let resolveResult = null;
-      try {
-        const { Resolver } = await import('node:dns/promises');
-        const resolver = new Resolver();
-        resolver.setServers(['8.8.8.8', '1.1.1.1']);
-        resolveResult = await resolver.resolve4('clean.tnepb.gov.tw');
-      } catch (e) {
-        resolveResult = 'Resolver error: ' + e.message;
-      }
-
-      tainanDiag = { ipTcp, resolveResult };
-    } catch (e) {
-      tainanDiag = { error: e.message };
-    }
-
     return res.status(200).json({
       ok: true,
       skipped: false,
@@ -270,7 +230,6 @@ export default async function handler(req, res) {
       targetCities: subContext.activeCities,
       sourceStats: sourceStats || [],
       partialErrors: partialErrors || [],
-      tainanDiag,
       matchedArrivals: processResult.matchedArrivals,
       sentNotifications: processResult.sentNotifications,
       failedNotifications: processResult.failedNotifications || 0,
