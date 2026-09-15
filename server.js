@@ -49,7 +49,7 @@ app.get(['/', '/health'], (req, res) => {
   });
 });
 
-// 2. 核心 API 路由 (相容 Vercel Serverless Function 呼叫規格)
+// 2. 核心 API 路由 (相容 Serverless HTTP 呼叫規格)
 app.all('/api/check-trucks', (req, res) => checkTrucksHandler(req, res));
 app.all('/api/check-weather', (req, res) => checkWeatherHandler(req, res));
 app.all('/api/line-webhook', (req, res) => lineWebhookHandler(req, res));

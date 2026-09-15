@@ -1,7 +1,7 @@
 {
   "name": "trash-alert-tw",
   "version": "1.0.0",
-  "description": "高雄市垃圾車 LINE 追蹤通知系統 (Trash Alert System)",
+  "description": "台灣跨縣市垃圾車 LINE 追蹤與到站通知系統 (Trash Alert TW)",
   "main": "api/check-trucks.js",
   "type": "module",
   "scripts": {

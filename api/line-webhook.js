@@ -1,6 +1,6 @@
 /**
  * api/line-webhook.js
- * Vercel Serverless Function — LINE Messaging API Webhook
+ * Cloud Run HTTP Handler — LINE Messaging API Webhook
  *
  * 功能：
  *   1. 接收 LINE 平台送來的 Webhook 事件（支援 join, message 等）。

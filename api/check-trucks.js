@@ -1,8 +1,8 @@
 /**
  * api/check-trucks.js
- * Vercel Serverless Function — 主要 Cron 入口點
+ * Cloud Run HTTP Handler — 主要 Cron 入口點
  *
- * 觸發排程：`0 9 * * *`（UTC），對應台灣時間每日 17:00 執行一次。
+ * 觸發排程：cron-job.org / Cloud Scheduler / GitHub Actions
  *
  * 防禦層（按執行順序）：
  *   1. Cron Secret 驗證       — 阻斷非授權的外部呼叫
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
   const triggerSource = extractTriggerSource(req);
 
   // ── 防禦層 1：Cron Secret 驗證 ───────────────────────────────────────────
-  // Vercel Cron 會在 Authorization header 附加 Bearer <CRON_SECRET>
+  // 排程器 (cron-job.org / Cloud Scheduler) 會在 Authorization header 附加 Bearer <CRON_SECRET>
   const authHeader = req.headers['authorization'] ?? '';
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
 

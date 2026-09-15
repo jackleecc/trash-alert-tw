@@ -19,7 +19,7 @@ jobs:
       - name: Call check-weather endpoint
         env:
           # 若沒有獨立的 WEATHER_URL secret，可以組合已有的 CHECK_TRUCKS_URL
-          # 假設 CHECK_TRUCKS_URL = https://your-domain.vercel.app/api/check-trucks
+          # 假設 CHECK_TRUCKS_URL = https://your-service.asia-east1.run.app/api/check-trucks
           # 我們這裡可以將 /api/check-trucks 替換為 /api/check-weather
           # 但更安全的是新增一個 CHECK_WEATHER_URL 秘密。為相容性，這裡示範替換邏輯。
           BASE_URL: ${{ secrets.CHECK_TRUCKS_URL }}

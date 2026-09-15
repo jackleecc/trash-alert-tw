@@ -1,6 +1,6 @@
 /**
  * api/check-weather.js
- * Vercel Serverless Function — 氣象預報排程入口
+ * Cloud Run HTTP Handler — 氣象預報排程入口
  *
  * 觸發排程：透過 GitHub Actions 每 30 分鐘觸發一次。
  * 流程：

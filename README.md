@@ -8,12 +8,12 @@
 
 | 項目 | 說明 / 網址 |
 | --- | --- |
-| **正式生產站點** | https://trash-alert-tw.vercel.app |
-| **垃圾車動態檢查 API** | `GET/POST` https://trash-alert-tw.vercel.app/api/check-trucks |
-| **氣象環境預警 API** | `GET/POST` https://trash-alert-tw.vercel.app/api/check-weather |
-| **LINE Webhook 接收端點** | `POST` https://trash-alert-tw.vercel.app/api/line-webhook |
+| **正式生產站點** | https://trash-alert-tw-1062111076858.asia-east1.run.app |
+| **垃圾車動態檢查 API** | `GET/POST` https://trash-alert-tw-1062111076858.asia-east1.run.app/api/check-trucks |
+| **氣象環境預警 API** | `GET/POST` https://trash-alert-tw-1062111076858.asia-east1.run.app/api/check-weather |
+| **LINE Webhook 接收端點** | `POST` https://trash-alert-tw-1062111076858.asia-east1.run.app/api/line-webhook |
 | **GitHub 程式庫** | https://github.com/jackleecc/trash-alert-tw |
-| **主機託管規格** | Vercel Serverless Functions（部署區域：`hkg1` 香港，降低台灣連線延遲） |
+| **主機託管規格** | Google Cloud Run（部署區域：`asia-east1` 台灣彰化，原生台灣 IP 出口） |
 
 ---
 
@@ -26,7 +26,7 @@
 | **車輛動態 (高雄市)** | 高雄市政府環保局開放資料 | [高雄市垃圾車即時動態 API](https://api.kcg.gov.tw/api/service/Get/aaf4ce4b-4ca8-43de-bfaf-6dc97e89cac0)<br>• 提供車號、路線代碼、即時 GPS 經緯度、清運時間戳記。 |
 | **車輛動態 (新北市)** | 新北市政府環保局開放資料 | [新北市垃圾清運點即時位置 API](https://data.ntpc.gov.tw/api/datasets/28ab4122-60e1-4065-98e5-abccb69aaca6/json?page=0&size=5000)<br>• 涵蓋汐止區、板橋區等全區即時車輛動態資料。 |
 | **車輛動態 (桃園市)** | 桃園市政府環境管理處 | [桃園市垃圾清運路線即時查詢系統](https://route.tyoem.gov.tw/api/trucks)<br>• 支援桃園全區清運動態（預設端點支援 `TAOYUAN_TRUCK_API_URL` 自訂覆寫；欄位已相容 `RouteNo`、`VehicleNo`、`px/py` 等規格）。 |
-| **車輛動態 (台南市)** | 臺南市環保局便民查詢網天眼系統 | [天眼即時車輛 WebService](https://clean.tnepb.gov.tw/WebService/WsSkyeyes.asmx/NewgetCarsinfo)<br>• 支援永康區等全區即時清運動態（相容 `car_licence`、`linename`、`wgs_x/y`、`cartype` 等規格）。<br>• ⚠️ **境外 IP 防火牆對策**：公家機關天眼主機設有嚴格 Geo-IP 防火牆，阻斷境外雲端 IP（如 Vercel 香港節點）。系統支援 `TAINAN_PROXY_URL` 台灣出口代理機制（詳見下方說明）。 |
+| **車輛動態 (台南市)** | 臺南市環保局便民查詢網天眼系統 | [天眼即時車輛 WebService](https://clean.tnepb.gov.tw/WebService/WsSkyeyes.asmx/NewgetCarsinfo)<br>• 支援永康區等全區即時清運動態（相容 `car_licence`、`linename`、`wgs_x/y`、`cartype` 等規格）。<br>• ⚠️ **境外 IP 防火牆對策**：公家機關天眼主機設有嚴格 Geo-IP 防火牆，阻斷境外雲端 IP。本系統已部署於 Google Cloud Run 台灣彰化機房 (`asia-east1`) 原生台灣 IP 出口直連；亦支援 `TAINAN_PROXY_URL` 出口代理機制（詳見下方說明）。 |
 | **天然災害停班課** | 行政院人事行政總處 (DGPA) | [天然災害停止上班及上課情形](https://www.dgpa.gov.tw/typh/daily/nds.html)<br>• 即時爬蟲解析颱風/豪雨停班停課公告，支援多縣市（高雄市、新北市、桃園市、台南市等）個別判定。 |
 | **即時氣象與空氣品質** | Open-Meteo 氣象預報生態系 | 1. [Weather Forecast API](https://api.open-meteo.com/v1/forecast)：精準依站點經緯度查詢未來 1 小時降雨量、降雨機率與紫外線 (UV Index)。<br>2. [Air Quality API](https://air-quality-api.open-meteo.com/v1/air-quality)：即時取得細懸浮微粒 (PM2.5) 濃度。 |
 | **即時通訊推播平台** | LINE Messaging API | 1. `https://api.line.me/v2/bot/message/push`：主動向指定群組發送到站警報與氣象通知。<br>2. `https://api.line.me/v2/bot/message/reply`：Webhook 零額度回覆群組 ID。<br>3. 系統廣播：熔斷告警與連續失敗通知。 |
@@ -38,17 +38,27 @@
 
 臺南市環保局天眼車輛動態系統主機（`clean.tnepb.gov.tw` / IP `59.120.96.115`，中華電信 HiNet）設有嚴格的 **Geo-IP 境外防火牆**，會靜默丟棄（Silent Drop）來自非台灣境內 IP（例如 AWS、Vercel 香港節點 `hkg1`）的 TCP SYN 封包，導致雲端排程連線逾時。
 
-為徹底解決此問題，本系統在 `lib/truckApi.js` 內建了**台灣出口代理架構**，當設定 `TAINAN_PROXY_URL` 時，自動將臺南即時車輛請求轉由代理端點抓取：
+> [!TIP]
+> **本系統主體已部署於 Google Cloud Run `asia-east1`（台灣彰化機房）**，所有 API 請求均從台灣境內原生 IP 發出，**無需額外設定代理即可直連臺南天眼系統**。
+> 
+> 以下代理架構僅作為**備援參考**，適用於未來若主體遷回境外平台時使用。
+
+系統在 `lib/truckApi.js` 內建了**台灣出口代理架構**，當設定 `TAINAN_PROXY_URL` 時，自動將臺南即時車輛請求轉由代理端點抓取：
 
 ```text
-Vercel Serverless (香港 hkg1)
+Cloud Run (台灣 asia-east1) ───[ 台灣境內 IP ]───► 臺南市環保局天眼系統 (59.120.96.115)
+                                                    ✅ 直連，無需代理
+
+--- 備援模式（僅在主體部署於境外時啟用）---
+
+境外雲端主機 (例如 Vercel hkg1)
         │ (POST / JSON)
         ▼
 台灣出口代理 (Taiwan Proxy) ───[ 台灣境內 IP / ASN ]───► 臺南市環保局天眼系統 (59.120.96.115)
-(Cloudflare Workers / GCP 彰化 / 本地主機)                      (繞過 Geo-IP 防火牆限制)
+(GCP 彰化 / Zeabur 台灣 / 本地主機)                       (繞過 Geo-IP 防火牆限制)
 ```
 
-### 開箱即用代理模組與部署方式
+### 備援代理模組與部署方式
 
 專案已在 [`proxy/`](proxy/) 目錄提供完整開箱即用的代理實作範本：
 
@@ -57,31 +67,6 @@ Vercel Serverless (香港 hkg1)
 | **Google Cloud Functions / Cloud Run**<br>*(🌟 官方首選推薦)* | [`proxy/gcp-function/`](proxy/gcp-function/)<br>搭配專案根目錄 [`Dockerfile`](Dockerfile) | **永久免費**<br>每月 200 萬次免費呼叫<br>*(Google Always Free)* | **官方首選！** 出口為 Google 彰化機房原生台灣 IP (`asia-east1`)，經實測 126ms 穩定秒回，100% 繞過中華電信公家機關境外防火牆。 |
 | **獨立 Node.js 服務**<br>*(原生住宅/伺服器 IP)* | [`proxy/standalone/`](proxy/standalone/) | **100% 免費**<br>免綁信用卡 | 適用於 Zeabur 台灣節點、家中常開主機（搭配 `npx localtunnel` 或 Cloudflare Tunnel 穿透）。 |
 | **Cloudflare Workers**<br>*(備援/實驗性質)* | [`proxy/cloudflare-worker/`](proxy/cloudflare-worker/)<br>搭配 [`wrangler.json`](wrangler.json) | **100% 免費**<br>免綁信用卡 | ⚠️ 免費方案子請求之出口流量易分配至海外節點（如加州 SJC），會遭公家機關 HiNet 防火牆判定境外而阻斷（HTTP 522）。 |
-
-#### 快速部署方式（Google Cloud Functions / Cloud Run）
-1. **前往主控台**：登入 [Google Cloud Console](https://console.cloud.google.com/functions)。
-2. **建立服務**：
-   - 名稱：`tainan-proxy`
-   - 區域：**`asia-east1 (台灣/Taiwan)`** ⚠️ *(極為關鍵，確保為台灣彰化機房 IP)*
-   - 驗證：選擇「允許公開存取 (Allow unauthenticated invocations)」
-3. **部署程式碼**：
-   - 執行階段：`Node.js 20`
-   - 進入點 (Entry point)：`tainanProxy`
-   - 將 [`proxy/gcp-function/index.js`](proxy/gcp-function/index.js) 與 [`proxy/gcp-function/package.json`](proxy/gcp-function/package.json) 內容貼入並點選 Deploy。
-   - *(若使用 GitHub 連動持續部署，根目錄已自動配置 [`Dockerfile`](Dockerfile) 支援 Cloud Run 自動構建)*。
-4. **Vercel 環境變數綁定**：
-   - 前往 Vercel -> Settings -> Environment Variables。
-   - 新增 `TAINAN_PROXY_URL`，值填入取得的服務網址（例如 `https://tainan-proxy-xxxxx.asia-east1.run.app`）。
-   - 點選 **Redeploy** 重新部署。
-
-#### 本地驗證代理工具
-```bash
-# 測試特定代理端點是否能成功抓取並解析臺南車輛資料
-node scripts/testProxy.js <PROXY_URL> [PROXY_SECRET]
-
-# 或直接使用環境變數執行
-TAINAN_PROXY_URL=https://... node scripts/testProxy.js
-```
 
 完整圖文建置 SOP 請參閱：[docs/TAIWAN_PROXY_SETUP.md](docs/TAIWAN_PROXY_SETUP.md)。
 
@@ -94,23 +79,17 @@ cron-job.org 為主要高頻觸發器：
 - 台灣時間：每日 `17:00-21:59`（週一、二、四、五、六），每 1~2 分鐘呼叫一次垃圾車檢查 API。
 - Request Header：`Authorization: Bearer <CRON_SECRET>`
 
-Vercel Cron 為備援與每日初始狀態快取：
+GitHub Actions 為氣象預報排程觸發器：
 
-- Cron：`0 9 * * *`（UTC）
-- 台灣時間：每日 `17:00` 一次。
-- 設定檔：[vercel.json](vercel.json)
-
-> [!CAUTION]
-> **Vercel 環境變數 `CRON_SECRET` 維護注意事項**：
-> Vercel 上的機密環境變數（Sensitive Environment Variables）一旦儲存後，**無法點擊眼睛圖示查看已建立的完整密碼**（系統會加密隱藏）。
-> 若忘記 `CRON_SECRET` 或需與外部排程（cron-job.org）校準，**應直接在 Vercel 刪除該變數並重新建立（記得 Redeploy 讓新環境變數生效）**，並立刻將新建立的密碼同步更新至 cron-job.org 的 `Authorization` Header，避免因密碼不一致導致排程持續被 HTTP 401 阻擋。
+- 排程：`*/30 23,0-15 * * *`（對應台灣時間 07:00~23:59）
+- 每 30 分鐘自動執行氣象預警偵測。
 
 ## 系統核心執行流程
 
 ### 1. 垃圾車追蹤流程 (`/api/check-trucks`)
 
 ```text
-定時排程觸發 (cron-job.org / GitHub Actions / Vercel Cron)
+定時排程觸發 (cron-job.org / GitHub Actions / Cloud Scheduler)
   │
   ├─► [防禦層 1] 安全比對 Header 之 Bearer CRON_SECRET（防範 Timing Attack）
   │
@@ -290,7 +269,7 @@ Vercel Cron 為備援與每日初始狀態快取：
 
 ## 自動排程配置說明
 
-因 Vercel Hobby 免費方案限制每日僅能執行 1 次 Cron，本專案採用多元排程架構：
+系統採用高可靠排程架構，確保車輛到站與氣象預報穩定觸發：
 
 1. **外部定時器服務 (推薦: [cron-job.org](https://cron-job.org))**
    - 設定於清運時段（台灣時間 17:00 ~ 21:59）每分鐘呼叫 `/api/check-trucks`。
@@ -299,8 +278,8 @@ Vercel Cron 為備援與每日初始狀態快取：
 2. **GitHub Actions ([.github/workflows/weather-trigger.yml](.github/workflows/weather-trigger.yml))**
    - 排程：`*/30 23,0-15 * * *`（對應台灣時間 07:00~23:59）。
    - 每 30 分鐘自動執行氣象預警偵測（具備 30 分鐘未通知 / 6 小時已通知之動態冷卻保護）。
-3. **Vercel Cron ([vercel.json](vercel.json))**
-   - 每日 17:00（UTC 09:00）作為備援心跳觸發。
+3. **Google Cloud Scheduler（可選）**
+   - 可在 GCP 控制台配置 Cloud Scheduler，直接內部呼叫 Cloud Run 服務端點。
 
 ---
 

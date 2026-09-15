@@ -71,7 +71,7 @@ async function main() {
       console.warn('⚠️ 警告：取得資料為空或格式未被 truckAdapter 識別。');
     }
 
-    console.log('\n🎉 代理伺服器驗證成功！可直接將此 URL 配置於 Vercel 的 TAINAN_PROXY_URL 環境變數。');
+    console.log('\n🎉 代理伺服器驗證成功！可直接將此 URL 配置於 TAINAN_PROXY_URL 環境變數。');
   } catch (err) {
     console.error('❌ 連線代理端點失敗:', err);
     process.exit(1);

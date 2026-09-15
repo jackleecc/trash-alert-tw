@@ -1,13 +1,18 @@
 # 台灣出口代理伺服器建置指南 (Taiwan Egress Proxy Setup Guide)
 
-本指南說明如何為 **Trash Alert TW** 快速建立一個位於台灣境內的輕量轉發代理（Egress Proxy），以解決臺南市政府環境保護局（`clean.tnepb.gov.tw`）伺服器阻擋境外 IP（如 Vercel 香港機房 `hkg1`）連線的問題。
+> [!TIP]
+> **本專案主服務現已部署於 Google Cloud Run `asia-east1` (台灣彰化機房)**，所有車輛 API 請求預設均從台灣原生 IP 發出，直連臺南天眼系統即可正常運作。
+> 
+> 本指南與代理模組保留作為**備援方案**（例如未來若有需要自境外伺服器呼叫，或需額外固定出口 IP 時使用）。
+
+本指南說明如何為 **Trash Alert TW** 快速建立一個位於台灣境內的輕量轉發代理（Egress Proxy），以解決臺南市政府環境保護局（`clean.tnepb.gov.tw`）伺服器阻擋境外 IP（例如 AWS 或一般海外雲端主機）連線的問題。
 
 ---
 
 ## 為什麼需要台灣出口代理？
 
-* **現況**：臺南市政府環保局天眼系統（`clean.tnepb.gov.tw`）之機房設有 Geo-IP 防火牆，僅接受台灣境內 IP 連線；境外雲端主機（包括 AWS、Vercel 香港節點）發起連線時，封包會被直接丟棄（Timeout）。
-* **機制**：我們透過位於台灣原生機房的極輕量 Serverless 函數作為轉發中繼，Vercel 請求該代理，代理在台灣境內向天眼 WebService 撈取資料後回傳，完全避開防火牆阻斷。
+* **現況**：臺南市政府環保局天眼系統（`clean.tnepb.gov.tw`）之機房設有 Geo-IP 防火牆，僅接受台灣境內 IP 連線；境外雲端主機發起連線時，封包會被直接丟棄（Timeout）。
+* **機制**：若主體部署於境外，可透過位於台灣原生機房的極輕量 Serverless 函數作為轉發中繼，向天眼 WebService 撈取資料後回傳，避開防火牆阻斷。
 
 ---
 
@@ -84,16 +89,15 @@ node scripts/testProxy.js https://asia-east1-myproject.cloudfunctions.net/tainan
 
 ---
 
-## 綁定至 Vercel 線上生產環境
+## 綁定至線上生產環境（備援情境）
 
-確認代理伺服器運作正常後，請至 Vercel 設定環境變數：
+若主服務需啟用代理端點，請於 Cloud Run 或主機環境變數配置：
 
-1. 開啟 [Vercel Dashboard](https://vercel.com/) -> 選擇 `trash-alert-tw` 專案。
-2. 進入 **Settings** -> **Environment Variables**。
-3. 新增變數：
+1. 開啟 [Google Cloud Console - Cloud Run](https://console.cloud.google.com/run) -> 選擇 `trash-alert-tw` 服務。
+2. 點擊「編輯並部署新的修訂版本 (Edit & Deploy New Revision)」-> 進入「變數與密碼 (Variables & Secrets)」。
+3. 新增環境變數：
    * **`TAINAN_PROXY_URL`**：填入您的代理網址（例如 `https://asia-east1-myproject.cloudfunctions.net/tainan-proxy`）。
    * **`TAINAN_PROXY_SECRET`**：若有啟用密鑰，填入該密鑰；若無可留空。
-4. 點擊 **Save**。
-5. 前往 **Deployments** 頁面，點選最新一筆部署右側的 `...` -> **Redeploy**（使新環境變數生效）。
+4. 點擊 **部署 (Deploy)**。
 
-完成後，Vercel 每次執行排程檢查台南市動態時，即會全自動透過台灣出口代理抓取天眼即時車輛，徹底終結請求逾時與通知漏發問題！
+完成後，每次排程檢查台南市動態時，即會全自動透過台灣出口代理抓取天眼即時車輛。
