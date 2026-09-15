@@ -20,7 +20,7 @@ test('getIsoDayOfWeek - converts UTC day properly', () => {
 });
 
 test('isWithinScheduleWindow - handles window logic correctly', () => {
-  // 表定 19:30:00，預設前 10 分鐘 (19:20) 到 後 40 分鐘 (20:10)
+  // 表定 19:30:00，預設前 15 分鐘 (19:15) 到 後 40 分鐘 (20:10)
   const sched = '19:30:00';
 
   // 1. 提早 10 分鐘 (19:20) -> true
@@ -29,13 +29,16 @@ test('isWithinScheduleWindow - handles window logic correctly', () => {
   // 2. 延後 25 分鐘 (19:55) -> true
   assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 55 }), true);
 
-  // 3. 提早 15 分鐘 (19:15) -> false (超過 10 分鐘提前門檻，防止出庫路過)
-  assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 15 }), false);
+  // 3. 提早 15 分鐘 (19:15) -> true (放寬至 15 分鐘提前門檻，包容清潔隊大幅早到)
+  assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 15 }), true);
 
-  // 4. 延後 45 分鐘 (20:15) -> false (超過 40 分鐘)
+  // 4. 提早 16 分鐘 (19:14) -> false (超過 15 分鐘提前門檻，防止出庫路過)
+  assert.equal(isWithinScheduleWindow(sched, { hour: 19, minute: 14 }), false);
+
+  // 5. 延後 45 分鐘 (20:15) -> false (超過 40 分鐘)
   assert.equal(isWithinScheduleWindow(sched, { hour: 20, minute: 15 }), false);
 
-  // 5. 無設定表定時間 -> true (向後相容)
+  // 6. 無設定表定時間 -> true (向後相容)
   assert.equal(isWithinScheduleWindow(null, { hour: 17, minute: 0 }), true);
   assert.equal(isWithinScheduleWindow('', { hour: 17, minute: 0 }), true);
 });
