@@ -356,12 +356,16 @@ test('getActiveSubscriptionContext - post-notification deep sleep stops external
       };
     }
     if (table === 'notification_logs') {
+      const gteHandler = async () => ({
+        // 今日 19:48 已推播過給 GRP_YK
+        data: [{ stop_id: 101, group_id: 'GRP_YK', route_id: 'TN_YK' }],
+        error: null,
+      });
       return {
         select: () => ({
-          gte: async () => ({
-            // 今日 19:48 已推播過給 GRP_YK
-            data: [{ stop_id: 101, group_id: 'GRP_YK' }],
-            error: null,
+          gte: gteHandler,
+          neq: () => ({
+            gte: gteHandler,
           }),
         }),
       };
@@ -400,6 +404,85 @@ test('getActiveSubscriptionContext - post-notification deep sleep stops external
     assert.equal(ctxBypass.ok, true);
     assert.equal(ctxBypass.hasActiveSubscriptions, true);
     assert.deepEqual(ctxBypass.activeCities, ['台南市']);
+  } finally {
+    mock.restoreAll();
+  }
+});
+
+test('getActiveSubscriptionContext - weather notifications do NOT trigger deep sleep', async () => {
+  mock.method(supabase, 'from', (table) => {
+    if (table === 'routes') {
+      return {
+        select: () => ({
+          eq: async () => ({
+            data: [{ id: 'TN_YK', name: '永康區文化路路線', active_days: [3], is_active: true }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'stops') {
+      return {
+        select: () => ({
+          in: async () => ({
+            data: [{ id: 101, route_id: 'TN_YK', name: '文化路40號', lat: 23.0, lng: 120.2, schedule_time: '19:42:00' }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'line_groups') {
+      return {
+        select: () => ({
+          eq: async () => ({
+            data: [{ group_id: 'GRP_YK', is_active: true }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'subscriptions') {
+      return {
+        select: () => ({
+          in: async () => ({
+            data: [{ group_id: 'GRP_YK', stop_id: 101 }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'notification_logs') {
+      return {
+        select: () => ({
+          neq: (col, val) => ({
+            gte: async () => {
+              // 若有過濾 route_id != 'WEATHER'，回傳空陣列；若未過濾則會回傳 WEATHER 記錄
+              return {
+                data: val === 'WEATHER' ? [] : [{ stop_id: 101, group_id: 'GRP_YK', route_id: 'WEATHER' }],
+                error: null,
+              };
+            },
+          }),
+        }),
+      };
+    }
+    return {};
+  });
+
+  try {
+    // 19:42 在時間窗內，且今日只有天氣預報推播，不應進入深度休眠！
+    const ctx = await getActiveSubscriptionContext({
+      now: new Date('2026-09-02T11:42:00Z'), // 19:42 TW
+      hour: 19,
+      minute: 42,
+      dateStr: '2026-09-02',
+    });
+
+    assert.equal(ctx.ok, true);
+    assert.equal(ctx.hasActiveSubscriptions, true);
+    assert.deepEqual(ctx.activeCities, ['台南市']);
+    assert.equal(ctx.stops.length, 1);
+    assert.equal(ctx.stops[0].id, 101);
   } finally {
     mock.restoreAll();
   }
