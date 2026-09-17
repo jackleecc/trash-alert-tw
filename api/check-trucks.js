@@ -38,6 +38,11 @@ function safeCompare(a, b) {
 }
 
 export default async function handler(req, res) {
+  // 臺南市已全面遷移為 Android 手機端原生 App 中繼 (/api/tainan-relay)，雲端排程預設永久略過輪詢以防熔斷
+  if (process.env.SKIP_TAINAN_POLLING === undefined) {
+    process.env.SKIP_TAINAN_POLLING = 'true';
+  }
+
   const CRON_SECRET = process.env.CRON_SECRET;
   const triggerSource = extractTriggerSource(req);
 

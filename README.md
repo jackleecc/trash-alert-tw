@@ -26,7 +26,7 @@
 | **車輛動態 (高雄市)** | 高雄市政府環保局開放資料 | [高雄市垃圾車即時動態 API](https://api.kcg.gov.tw/api/service/Get/aaf4ce4b-4ca8-43de-bfaf-6dc97e89cac0)<br>• 提供車號、路線代碼、即時 GPS 經緯度、清運時間戳記。 |
 | **車輛動態 (新北市)** | 新北市政府環保局開放資料 | [新北市垃圾清運點即時位置 API](https://data.ntpc.gov.tw/api/datasets/28ab4122-60e1-4065-98e5-abccb69aaca6/json?page=0&size=5000)<br>• 涵蓋汐止區、板橋區等全區即時車輛動態資料。 |
 | **車輛動態 (桃園市)** | 桃園市政府環境管理處 | [桃園市垃圾清運路線即時查詢系統](https://route.tyoem.gov.tw/api/trucks)<br>• 支援桃園全區清運動態（預設端點支援 `TAOYUAN_TRUCK_API_URL` 自訂覆寫；欄位已相容 `RouteNo`、`VehicleNo`、`px/py` 等規格）。 |
-| **車輛動態 (台南市)** | 臺南市環保局便民查詢網天眼系統 | [天眼即時車輛 WebService](https://clean.tnepb.gov.tw/WebService/WsSkyeyes.asmx/NewgetCarsinfo)<br>• 支援永康區等全區即時清運動態（相容 `car_licence`、`linename`、`wgs_x/y`、`cartype` 等規格）。<br>• ⚠️ **境外 IP 防火牆對策**：公家機關天眼主機設有嚴格 Geo-IP 防火牆，阻斷境外雲端 IP。本系統已部署於 Google Cloud Run 台灣彰化機房 (`asia-east1`) 原生台灣 IP 出口直連；亦支援 `TAINAN_PROXY_URL` 出口代理機制（詳見下方說明）。 |
+| **車輛動態 (台南市)** | 臺南市天眼系統 / 臺南環保通 (`clean.tnepb.gov.tw`) | [天眼即時車輛 WebService](https://clean.tnepb.gov.tw/WebService/WsSkyeyes.asmx/NewgetCarsinfo)<br>• ⭕ **完整清運路線**：涵蓋永康區第 70 線 (永康-夜間31) 等全區完整清運路線與站點。<br>• ⭕ **即時車機回傳**：真實到站 GPS 坐標與時間戳記。<br>• ❌ **公有雲全面阻擋**：中華電信 HiNet 防火牆封鎖所有公有雲機房（Cloudflare 522、GCP/AWS/Vercel 連線逾時），需本地/台灣實體住宅行動 IP 連線。<br>• 📱 **純手機通知中繼架構**：為徹底避免雲端連線逾時觸發熔斷告警，系統已**完全停止雲端主動輪詢天眼系統**；全面採用 **Android 手機邊緣中繼架構**（官方「臺南環保通」App 原生接收到站推播 + MacroDroid 免費自動化轉發至 `/api/tainan-relay`），免開電腦、零維護、100% 穩定推播。 |
 | **天然災害停班課** | 行政院人事行政總處 (DGPA) | [天然災害停止上班及上課情形](https://www.dgpa.gov.tw/typh/daily/nds.html)<br>• 即時爬蟲解析颱風/豪雨停班停課公告，支援多縣市（高雄市、新北市、桃園市、台南市等）個別判定。 |
 | **即時氣象與空氣品質** | Open-Meteo 氣象預報生態系 | 1. [Weather Forecast API](https://api.open-meteo.com/v1/forecast)：精準依站點經緯度查詢未來 1 小時降雨量、降雨機率與紫外線 (UV Index)。<br>2. [Air Quality API](https://air-quality-api.open-meteo.com/v1/air-quality)：即時取得細懸浮微粒 (PM2.5) 濃度。 |
 | **即時通訊推播平台** | LINE Messaging API | 1. `https://api.line.me/v2/bot/message/push`：主動向指定群組發送到站警報與氣象通知。<br>2. `https://api.line.me/v2/bot/message/reply`：Webhook 零額度回覆群組 ID。<br>3. 系統廣播：熔斷告警與連續失敗通知。 |
@@ -34,41 +34,39 @@
 
 ---
 
-## 台灣出口代理伺服器架構 (Taiwan Egress Proxy)
+## 臺南市邊緣中繼架構 (Android Mobile Relay)
 
-臺南市環保局天眼車輛動態系統主機（`clean.tnepb.gov.tw` / IP `59.120.96.115`，中華電信 HiNet）設有嚴格的 **Geo-IP 境外防火牆**，會靜默丟棄（Silent Drop）來自非台灣境內 IP（例如 AWS、Vercel 香港節點 `hkg1`）的 TCP SYN 封包，導致雲端排程連線逾時。
+臺南市環保局天眼車輛動態系統主機（`clean.tnepb.gov.tw` / IP `59.120.96.115`，中華電信 HiNet）設有嚴格的 **Geo-IP 境外與資料中心防火牆**，會直接阻斷來自非台灣實體住宅/行動 IP（包括 Cloudflare Anycast、Vercel、GCP 彰化機房等雲端 IP）的連線。
 
-> [!TIP]
-> **本系統主體已部署於 Google Cloud Run `asia-east1`（台灣彰化機房）**，所有 API 請求均從台灣境內原生 IP 發出，**無需額外設定代理即可直連臺南天眼系統**。
-> 
-> 以下代理架構僅作為**備援參考**，適用於未來若主體遷回境外平台時使用。
-
-系統在 `lib/truckApi.js` 內建了**台灣出口代理架構**，當設定 `TAINAN_PROXY_URL` 時，自動將臺南即時車輛請求轉由代理端點抓取：
+為了解決「本機電腦關機時雲端無法直連」以及「避免頻繁連線失敗觸發系統熔斷 (Circuit Breaker)」的問題，專案全面導入 **Android 手機邊緣中繼架構**：
 
 ```text
-Cloud Run (台灣 asia-east1) ───[ 台灣境內 IP ]───► 臺南市環保局天眼系統 (59.120.96.115)
-                                                    ✅ 直連，無需代理
-
---- 備援模式（僅在主體部署於境外時啟用）---
-
-境外雲端主機 (例如 Vercel hkg1)
-        │ (POST / JSON)
-        ▼
-台灣出口代理 (Taiwan Proxy) ───[ 台灣境內 IP / ASN ]───► 臺南市環保局天眼系統 (59.120.96.115)
-(GCP 彰化 / Zeabur 台灣 / 本地主機)                       (繞過 Geo-IP 防火牆限制)
+[臺南市環保局清潔車隊]
+       │ (車機 GPS 即時回報)
+       ▼
+[臺南市天眼伺服器 (clean.tnepb.gov.tw)]
+       │ (透過台灣 4G/5G 原生推播至民眾手機)
+       ▼
+[您的 Android 手機 (隨身主力機)]
+  ├─ 1.「臺南環保通」官方 App 收到原生到站推播
+  └─ 2.「MacroDroid」自動攔截通知內容
+       │
+       │ (發送 HTTP POST Webhook)
+       ▼
+[雲端後端端點 (/api/tainan-relay)]
+  ├─ 驗證 CRON_SECRET 安全密鑰 (防範 Timing Attack)
+  ├─ 30 分鐘冷卻防洗版檢核 (cooldownService)
+  └─ 呼叫 LINE Messaging API
+       ▼
+[LINE 專案群組收到格式化到站提醒！]
 ```
 
-### 備援代理模組與部署方式
+### 架構特色與防護保證：
+1. **雲端定時排程全面免除天眼輪詢**：雲端 Cron（新北、桃園）在計算今日活躍城市時，預設自動排除臺南市輪詢，**絕不會因為天眼網路問題累積失敗計數或觸發連續失敗熔斷**。
+2. **零耗電與零主機費用**：手機不需要 24 小時開著當伺服器，只在官方 App 跳出通知時觸發一次毫秒級 HTTP POST，MacroDroid 永久免費。
+3. **出門在外移動切網無影響**：由 Google 原生 FCM 系統維護推播，無論手機使用 Wi-Fi 或 4G/5G 行動網路均能順暢轉發。
 
-專案已在 [`proxy/`](proxy/) 目錄提供完整開箱即用的代理實作範本：
-
-| 平台方案 | 目錄位置 / 入口 | 費用 / 門檻 | 特色與推薦情境 |
-| :--- | :--- | :--- | :--- |
-| **Google Cloud Functions / Cloud Run**<br>*(🌟 官方首選推薦)* | [`proxy/gcp-function/`](proxy/gcp-function/)<br>搭配專案根目錄 [`Dockerfile`](Dockerfile) | **永久免費**<br>每月 200 萬次免費呼叫<br>*(Google Always Free)* | **官方首選！** 出口為 Google 彰化機房原生台灣 IP (`asia-east1`)，經實測 126ms 穩定秒回，100% 繞過中華電信公家機關境外防火牆。 |
-| **獨立 Node.js 服務**<br>*(原生住宅/伺服器 IP)* | [`proxy/standalone/`](proxy/standalone/) | **100% 免費**<br>免綁信用卡 | 適用於 Zeabur 台灣節點、家中常開主機（搭配 `npx localtunnel` 或 Cloudflare Tunnel 穿透）。 |
-| **Cloudflare Workers**<br>*(備援/實驗性質)* | [`proxy/cloudflare-worker/`](proxy/cloudflare-worker/)<br>搭配 [`wrangler.json`](wrangler.json) | **100% 免費**<br>免綁信用卡 | ⚠️ 免費方案子請求之出口流量易分配至海外節點（如加州 SJC），會遭公家機關 HiNet 防火牆判定境外而阻斷（HTTP 522）。 |
-
-完整圖文建置 SOP 請參閱：[docs/TAIWAN_PROXY_SETUP.md](docs/TAIWAN_PROXY_SETUP.md)。
+> 完整圖文手機設定指南請參閱：[docs/guides/macrodroid-setup.md](docs/guides/macrodroid-setup.md)。
 
 ---
 
@@ -106,8 +104,8 @@ GitHub Actions 為氣象預報排程觸發器：
   ├─► [防禦層 3] DGPA 停班停課 Lazy Load 快取（查詢 daily_status）
   │      └─ 若當日已宣布該縣市天災停收，則略過該縣市路線，避免無效運算
   │
-  ├─► [資料抓取] 平行抓取高雄市、新北市、桃園市與台南市環保局即時 API（支援逾時重試、指數退避與 Schema 正規化）
-  │      └─ 連續失敗達 3 次時自動標記 is_paused 並推播管理告警
+  ├─► [資料抓取] 平行抓取新北市、桃園市等公有開放資料 API（臺南市已全面改由手機 App 邊緣中繼 Webhook 推播，免雲端輪詢，杜絕連線逾時）
+  │      └─ 連續失敗達 10 次時自動標記 is_paused 並推播管理告警
   │
   ├─► [核心運算與比對]
   │      ├─ 依星期過濾 routes.active_days 營業日路線
