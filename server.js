@@ -15,6 +15,9 @@ import checkTrucksHandler from './api/check-trucks.js';
 import checkWeatherHandler from './api/check-weather.js';
 import lineWebhookHandler from './api/line-webhook.js';
 
+// 允許台灣政府專屬 TWCA / GCA 憑證通過 (解決 Linux 預設憑證庫缺少 TWCA 根憑證導致的 fetch failed)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 // 全域未捕捉例外防護，避免容器無日誌靜默退出
 process.on('uncaughtException', (err) => {
   console.error('[Server] Uncaught Exception:', err);
