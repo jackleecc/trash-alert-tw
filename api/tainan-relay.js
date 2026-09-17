@@ -79,29 +79,32 @@ export default async function handler(req, res) {
     }
 
     if (!targetStop) {
-      // 查詢所有活躍的臺南站點
-      const { data: tainanStops, error: stopsErr } = await supabase
+      // 查詢所有站點與路線
+      const { data: allStops, error: stopsErr } = await supabase
         .from('stops')
-        .select('*, routes(*)')
-        .eq('is_active', true);
+        .select('*, routes(*)');
 
-      if (!stopsErr && tainanStops && tainanStops.length > 0) {
-        // 先以文字關鍵字匹配 (如 "文化路", "永康", "夜間31")
-        targetStop = tainanStops.find(
+      if (!stopsErr && allStops && allStops.length > 0) {
+        // 先以文字關鍵字精確匹配 (如 "文化路", "永康區文化路40號", "夜間31")
+        targetStop = allStops.find(
           (s) =>
             (s.name && fullText.includes(s.name)) ||
-            (s.address && fullText.includes(s.address)) ||
+            (s.name && fullText.includes(s.name.replace(/臺/g, '台'))) ||
             (s.routes?.name && fullText.includes(s.routes.name))
         );
 
-        // 若無直接文字匹配，但全系統只有一個臺南活躍站點，預設指向該站點
+        // 若無直接全名匹配，嘗試部分關鍵字比對 (如 "文化路"、"40號"、"永康")
         if (!targetStop) {
-          const tainanOnlyStops = tainanStops.filter(
-            (s) => s.routes?.city === '台南市' || s.name?.includes('永康')
+          targetStop = allStops.find(
+            (s) =>
+              (s.routes?.city === '台南市' || s.name?.includes('永康')) &&
+              (fullText.includes('文化路') || fullText.includes('40號') || fullText.includes('永康') || fullText.includes('70') || fullText.includes('31'))
           );
-          if (tainanOnlyStops.length === 1) {
-            targetStop = tainanOnlyStops[0];
-          }
+        }
+
+        // 若依然沒有匹配，但為臺南相關通知，預設指向 Stop 6 (永康區文化路40號)
+        if (!targetStop) {
+          targetStop = allStops.find((s) => s.id === 6) || allStops.find((s) => s.routes?.city === '台南市');
         }
 
         if (targetStop) {
