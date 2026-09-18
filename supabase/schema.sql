@@ -7,6 +7,7 @@
 CREATE TABLE IF NOT EXISTS public.routes (
     id TEXT PRIMARY KEY,                       -- 路線代碼 (例如: 'R101')
     name TEXT NOT NULL,                        -- 路線名稱 (例如: '新興區清運A線')
+    city TEXT,                                 -- 路線歸屬縣市 (例如: '高雄市', '桃園市', '台南市')
     active_days INTEGER[] NOT NULL DEFAULT '{1,2,4,5,6}'
         CHECK (
             cardinality(active_days) > 0

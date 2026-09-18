@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabaseClient.js';
 import { sendLinePushMessage } from '../lib/lineClient.js';
 import { checkUpcomingRain } from '../lib/weatherApi.js';
 import { getTaiwanNow, isWeatherQuietHours } from '../lib/timeUtils.js';
+import { reserveQuota, releaseQuotaReservation } from '../lib/quotaService.js';
 
 const COOLDOWN_NOTIFIED_MS = 6 * 60 * 60 * 1000; // 發送過通知：冷卻 6 小時
 const COOLDOWN_UNNOTIFIED_MS = 25 * 60 * 1000; // 查詢但未通知：冷卻 30 分鐘 (保留 25 分鐘排程抖動緩衝)
@@ -161,19 +162,10 @@ export default async function handler(req, res) {
             continue;
           }
 
-          // 檢查發送額度
-          const { data: quotaResult, error: quotaError } = await supabase.rpc('reserve_quota', {
-            p_month: currentMonth
-          });
+          // 檢查發送額度 (FIX-11: 透過 reserveQuota 統一管理額度並確保觸發熔斷告警)
+          const quotaReservation = await reserveQuota(currentMonth);
 
-          if (quotaError) {
-            console.error(`[CheckWeather] 額度保留失敗 (${groupId}):`, quotaError.message);
-            await supabase.rpc('release_notification_claim', { p_log_id: logId });
-            continue;
-          }
-
-          const row = Array.isArray(quotaResult) ? quotaResult[0] : quotaResult;
-          if (!row || !row.reserved) {
+          if (!quotaReservation.reserved) {
             console.warn(`[CheckWeather] 額度耗盡或已熔斷，無法發送氣象推播 (${groupId})。`);
             await supabase.rpc('release_notification_claim', { p_log_id: logId });
             break;
@@ -190,7 +182,7 @@ export default async function handler(req, res) {
           } else {
             console.error(`[CheckWeather] 發送 LINE 訊息失敗 (${groupId}):`, pushRes.error);
             await supabase.rpc('release_notification_claim', { p_log_id: logId });
-            await supabase.rpc('release_quota_reservation', { p_month: currentMonth });
+            await releaseQuotaReservation(currentMonth);
           }
         }
       } else {

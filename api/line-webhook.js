@@ -42,10 +42,13 @@ export default async function handler(req, res) {
   const signature = req.headers['x-line-signature'] || '';
   const channelSecret = process.env.LINE_CHANNEL_SECRET;
 
-  const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+  const rawBody =
+    req.rawBody ||
+    (typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}));
 
   if (channelSecret && !verifyLineSignature(rawBody, signature, channelSecret)) {
-    console.warn('[Webhook] 簽章比對未完全吻合（可能因 JSON 空格排版差異），不中斷執行，繼續處理事件。');
+    console.warn('[Webhook] LINE 簽章驗證失敗，拒絕處理此請求。');
+    return res.status(401).json({ ok: false, error: 'Invalid signature' });
   }
 
   const events = (req.body && req.body.events) || [];

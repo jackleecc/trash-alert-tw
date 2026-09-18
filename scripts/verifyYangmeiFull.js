@@ -1,5 +1,4 @@
 import 'dotenv/config';
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import { supabase } from '../lib/supabaseClient.js';
 import { checkUpcomingRain } from '../lib/weatherApi.js';
 import { sendLinePushMessage } from '../lib/lineClient.js';

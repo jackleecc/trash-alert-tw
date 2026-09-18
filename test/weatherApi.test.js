@@ -302,4 +302,23 @@ test('checkUpcomingRain - PM2.5 boundary check (69.9 does not trigger, 70.0 trig
   }
 });
 
+test('checkUpcomingRain - gracefully handles fetch timeout via AbortError (FIX-9)', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    const abortErr = new Error('The operation was aborted');
+    abortErr.name = 'AbortError';
+    throw abortErr;
+  };
+
+  try {
+    const res = await checkUpcomingRain(25.0, 121.5);
+    assert.equal(res.shouldNotify, false);
+    assert.equal(res.willRain, false);
+    assert.equal(res.desc, '氣象預報讀取失敗');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
 

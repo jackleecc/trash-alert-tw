@@ -1,7 +1,10 @@
 import functions from '@google-cloud/functions-framework';
 
-// 允許台灣政府 TWCA / GCA 憑證 (Linux 預設憑證庫可能缺少 TWCA 根憑證)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// 僅在特定環境缺少 TWCA/GCA 憑證庫且明確設定 ALLOW_INSECURE_TLS 時才允許降級，防範 MITM (FIX-7)
+if (process.env.ALLOW_INSECURE_TLS === 'true') {
+  console.warn('⚠️ [TLS Warning] ALLOW_INSECURE_TLS 已啟用，暫時停用嚴格 TLS 憑證檢查');
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
 
 const TARGET_API_URL = 'https://clean.tnepb.gov.tw/WebService/WsSkyeyes.asmx/NewgetCarsinfo';
 const REFERER_URL = 'https://clean.tnepb.gov.tw/index.aspx';

@@ -5,6 +5,7 @@ import {
   isWithinGeofence,
   computeAdaptiveRadius,
   calculateSpeedKmh,
+  isMovingTowardsApproach,
 } from '../lib/geoUtils.js';
 
 
@@ -70,5 +71,36 @@ test('calculateSpeedKmh - calculates speed from GPS displacement and time delta'
 
   // 時間差不合理（如同一秒）回傳 null
   assert.equal(calculateSpeedKmh(p1, { ...p2, time: p1.time }), null);
+});
+
+test('isMovingTowardsApproach - stationary truck loading trash with GPS north drift passes southbound stop', () => {
+  // 垃圾車在南下站點 (180°) 停靠作業，車速為 0，GPS 漂移朝北約 1.1 公尺 (lat > prev_lat => is_southbound: false)
+  const truckAtStop = {
+    lat: 25.076260,
+    lng: 121.649942,
+    prev_lat: 25.076250, // 緯度增加 0.000010 度 (~1.1 公尺)
+    prev_lng: 121.649942,
+    speed: 0,
+    is_southbound: false, // 遭判定為朝北，但處於停靠作業狀態
+  };
+
+  const officialBearing = 180; // 南下法定進場角
+  const passed = isMovingTowardsApproach(truckAtStop, officialBearing);
+  assert.equal(passed, true, '正在站點停靠作業之車輛，即使 GPS 逆向微幅漂移亦必須優先獲得豁免');
+});
+
+test('isMovingTowardsApproach - low-speed creeping truck (<5 km/h) is exempt from bearing filter', () => {
+  const creepingTruck = {
+    lat: 25.076280,
+    lng: 121.649942,
+    prev_lat: 25.076250,
+    prev_lng: 121.649942,
+    speed: 3.2, // 3.2 km/h 低速挪車
+    is_southbound: false,
+  };
+
+  const officialBearing = 180;
+  const passed = isMovingTowardsApproach(creepingTruck, officialBearing);
+  assert.equal(passed, true, '低速挪車作業時速 < 5 km/h 應獲得方位豁免');
 });
 

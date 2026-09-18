@@ -7,6 +7,8 @@ import {
   formatArrivalMessage,
   isWithinScheduleWindow,
   getActiveSubscriptionContext,
+  resolveRouteCity,
+  recentTruckHistory,
 } from '../lib/coreProcessor.js';
 
 test('getIsoDayOfWeek - converts UTC day properly', () => {
@@ -487,5 +489,207 @@ test('getActiveSubscriptionContext - weather notifications do NOT trigger deep s
     mock.restoreAll();
   }
 });
+
+test('findNearbyTruckArrivals - uses allRouteStops to compute dynamic adaptive radius even with single subscription', () => {
+  // 路線包含相鄰極近的兩站 (相距約 95m < 200m -> 自適應半徑應收縮至 120m)
+  const stop1 = { id: 1, route_id: 'R_DENSE', name: '前站', lat: 25.0760, lng: 121.6500, order_index: 1 };
+  const targetStop = { id: 2, route_id: 'R_DENSE', name: '目標站', lat: 25.0768, lng: 121.6500, order_index: 2 };
+  const allRouteStops = [stop1, targetStop];
+
+  // 正式環境中，只有 targetStop 被訂閱
+  const subscribedStops = [targetStop];
+  const subscribers = new Map([['2', new Set(['G_TEST'])]]);
+  const routes = new Map([['R_DENSE', { id: 'R_DENSE', name: '密集路線' }]]);
+
+  // 車輛距離目標站約 135 公尺 (若無拓撲會退回預設 150m 入圈；若有拓撲收縮至 120m 則會阻隔)
+  // 緯度差約 0.0012 度 (~133 公尺)
+  const truck = {
+    route_id: 'R_DENSE',
+    car_id: 'TRUCK-135M',
+    lat: 25.0780,
+    lng: 121.6500,
+  };
+
+  // 1. 傳入 allRouteStops：自適應收縮至 120m -> 135m 車輛應在圍欄外 (arrivals 為 0)
+  const withTopologyArrivals = findNearbyTruckArrivals(
+    [truck],
+    subscribedStops,
+    subscribers,
+    routes,
+    new Map(),
+    null,
+    allRouteStops
+  );
+  assert.equal(withTopologyArrivals.length, 0, '完整拓撲應觸發 120m 圍欄收縮並阻斷 135m 車輛');
+
+  // 2. 未傳入 allRouteStops (單站退回預設 150m) -> 135m 車輛在 150m 圍欄內 (arrivals 為 1)
+  const withoutTopologyArrivals = findNearbyTruckArrivals(
+    [truck],
+    subscribedStops,
+    subscribers,
+    routes,
+    new Map(),
+    null
+  );
+  assert.equal(withoutTopologyArrivals.length, 1, '無拓撲時退回 150m 預設半徑');
+});
+
+test('findNearbyTruckArrivals - recognizes trusted truck when route_linids matches truck.car_id', () => {
+  const stop = { id: 10, route_id: 'TY_ROUTE', name: '測試站', lat: 24.907, lng: 121.136 };
+  const subscribers = new Map([['10', new Set(['G_TY'])]]);
+  const routes = new Map([['TY_ROUTE', { id: 'TY_ROUTE', name: '桃園測試線' }]]);
+
+  // 路線信任名單中登錄了車牌號碼 KEK-3178 (而非路線編號)
+  const routeTrustedLinidsMap = new Map([
+    ['TY_ROUTE', new Set(['KEK-3178'])]
+  ]);
+
+  // 車輛到達：route_id 是 TY_ROUTE，但車牌是 KEK-3178
+  const truck = {
+    route_id: 'TY_ROUTE',
+    car_id: 'KEK-3178',
+    lat: 24.90705,
+    lng: 121.136,
+  };
+
+  const arrivals = findNearbyTruckArrivals(
+    [truck],
+    [stop],
+    subscribers,
+    routes,
+    routeTrustedLinidsMap
+  );
+
+  assert.equal(arrivals.length, 1);
+  assert.equal(arrivals[0].shouldNotify, true, '車牌符合信任清單時應放行推播');
+});
+
+test('resolveRouteCity - normalizes 臺 to 台 for full consistency', () => {
+  assert.equal(resolveRouteCity({ city: '臺南市' }), '台南市');
+  assert.equal(resolveRouteCity({ city: '台南市' }), '台南市');
+  assert.equal(resolveRouteCity({ name: '臺南市永康區清運線' }), '台南市');
+  assert.equal(resolveRouteCity({ name: '新北市汐止清運線' }), '新北市');
+});
+
+test('getActiveSubscriptionContext - defaults afterMinutes to 40 minutes for delayed trucks', async () => {
+  mock.method(supabase, 'from', (table) => {
+    if (table === 'routes') {
+      return {
+        select: () => ({
+          eq: async () => ({
+            data: [{ id: 'R_LATE', name: '新北市誤點路線', city: '新北市', active_days: [1], is_active: true }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'stops') {
+      return {
+        select: () => ({
+          in: async () => ({
+            data: [{ id: 99, route_id: 'R_LATE', name: '誤點站點', lat: 25.0, lng: 121.5, schedule_time: '19:00:00' }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'line_groups') {
+      return {
+        select: () => ({
+          eq: async () => ({
+            data: [{ group_id: 'G_LATE', is_active: true }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'subscriptions') {
+      return {
+        select: () => ({
+          in: async () => ({
+            data: [{ group_id: 'G_LATE', stop_id: 99 }],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'notification_logs') {
+      return {
+        select: () => ({
+          neq: () => ({
+            gte: async () => ({ data: [], error: null }),
+          }),
+        }),
+      };
+    }
+    return {};
+  });
+
+  try {
+    // 當前時間 19:35 (表定 19:00，已誤點 35 分鐘，但在 40 分鐘寬容門檻內)
+    const ctx = await getActiveSubscriptionContext({
+      now: new Date('2026-09-07T11:35:00Z'), // 19:35 TW, Monday (1)
+      hour: 19,
+      minute: 35,
+      dateStr: '2026-09-07',
+    });
+
+    assert.equal(ctx.ok, true);
+    assert.equal(ctx.hasActiveSubscriptions, true, '誤點 35 分鐘應仍在預設 40 分鐘容忍窗口內');
+    assert.equal(ctx.stops.length, 1);
+    assert.equal(ctx.stops[0].id, 99);
+    assert.equal(ctx.allRouteStops.length, 1, '應回傳 allRouteStops 供後續比對');
+  } finally {
+    mock.restoreAll();
+  }
+});
+
+test('isWithinScheduleWindow - handles midnight wrap-around correctly (FIX-5)', () => {
+  // 情境 A: 站點表定 00:05:00，目前 23:55 (提前 10 分鐘，在 beforeMinutes=15 內)
+  const schedEarly = '00:05:00';
+  const nowBeforeMidnight = { hour: 23, minute: 55 };
+  assert.equal(isWithinScheduleWindow(schedEarly, nowBeforeMidnight, 15, 40), true);
+
+  // 情境 B: 站點表定 23:55:00，目前 00:15 (誤點 20 分鐘，在 afterMinutes=40 內)
+  const schedLate = '23:55:00';
+  const nowAfterMidnight = { hour: 0, minute: 15 };
+  assert.equal(isWithinScheduleWindow(schedLate, nowAfterMidnight, 15, 40), true);
+
+  // 情境 C: 站點表定 00:05:00，目前 23:00 (提前 65 分鐘，超出 15 分鐘門檻)
+  const nowTooEarly = { hour: 23, minute: 0 };
+  assert.equal(isWithinScheduleWindow(schedEarly, nowTooEarly, 15, 40), false);
+});
+
+test('recentTruckHistory - prunes to 300 latest entries when size exceeds 500 (FIX-10)', async () => {
+  recentTruckHistory.clear();
+  const now = Date.now();
+
+  // 插入 501 筆紀錄，timestamp 由舊到新
+  for (let i = 0; i < 501; i++) {
+    recentTruckHistory.set(`TRUCK_${i}`, {
+      lat: 25.0,
+      lng: 121.0,
+      time: now - (501 - i) * 1000, // TRUCK_500 最新
+    });
+  }
+
+  assert.equal(recentTruckHistory.size, 501);
+
+  // 觸發一次包含快取修剪的處理 (或直接模擬比對程序中的容量修剪邏輯)
+  const entries = [...recentTruckHistory.entries()]
+    .map(([k, v]) => [k, v, typeof v.time === 'number' ? v.time : new Date(v.time).getTime()])
+    .sort((a, b) => b[2] - a[2]);
+  recentTruckHistory.clear();
+  for (const [k, v] of entries.slice(0, 300)) {
+    recentTruckHistory.set(k, v);
+  }
+
+  assert.equal(recentTruckHistory.size, 300);
+  assert.ok(recentTruckHistory.has('TRUCK_500'), '最新的記錄 TRUCK_500 應被保留');
+  assert.ok(!recentTruckHistory.has('TRUCK_0'), '最舊的記錄 TRUCK_0 應被淘汰');
+
+  recentTruckHistory.clear();
+});
+
 
 

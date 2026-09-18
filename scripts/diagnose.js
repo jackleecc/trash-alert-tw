@@ -10,7 +10,13 @@ import { calculateDistanceMeters } from '../lib/geoUtils.js';
 import { getTaiwanNow, isWithinServiceWindow } from '../lib/timeUtils.js';
 import { getIsoDayOfWeek, findNearbyTruckArrivals } from '../lib/coreProcessor.js';
 
-const GROUP_ID = 'C8b514cecb1141d158bb44a19f33eb291';
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_DIAGNOSE !== 'true') {
+  console.error('❌ 此診斷腳本含有資料庫清理與寫入操作，禁止直接在生產環境中未授權執行！');
+  console.error('若確認要強制執行，請設定環境變數 ALLOW_PROD_DIAGNOSE=true');
+  process.exit(1);
+}
+
+const GROUP_ID = process.env.DIAG_GROUP_ID || 'C8b514cecb1141d158bb44a19f33eb291';
 
 async function diagnose() {
   console.log('='.repeat(70));
@@ -24,8 +30,12 @@ async function diagnose() {
   console.log(`\n📅 台灣時間：${twNow.dateStr} ${twNow.hour}:${String(twNow.minute).padStart(2,'0')} (星期${dayNames[isoDay]})`);
   console.log(`⏰ 服務時間窗 (17:00-21:59)：${isWithinServiceWindow() ? '✅ 在時段內' : '❌ 不在時段內 — 真實 check-trucks 會在這裡被擋掉'}`);
 
-  // 1. 清理重複站點
-  console.log('\n── [1/8] 清理重複站點 ──');
+  // 1. 檢查/清理重複站點 (FIX-8)
+  console.log('\n── [1/8] 檢查重複站點 ──');
+  const shouldCleanup =
+    process.argv.includes('--force') ||
+    process.argv.includes('--cleanup') ||
+    process.env.ENABLE_DIAG_CLEANUP === 'true';
   const { data: dupeStops } = await supabase
     .from('stops')
     .select('id, name, route_id')
@@ -36,22 +46,26 @@ async function diagnose() {
   if (dupeStops && dupeStops.length > 1) {
     const keepId = dupeStops[0].id;
     const removeIds = dupeStops.slice(1).map(s => s.id);
-    console.log(`  保留 stop_id=${keepId}，刪除重複: ${removeIds.join(', ')}`);
-    
-    // 先移轉訂閱到保留的站點
-    for (const rid of removeIds) {
-      await supabase.from('subscriptions').delete().eq('stop_id', rid);
+    if (!shouldCleanup) {
+      console.log(`  ⚠️ 發現重複站點: ${removeIds.join(', ')} (唯讀防護模式，若需清理請加上 --force 參數)`);
+    } else {
+      console.log(`  保留 stop_id=${keepId}，刪除重複: ${removeIds.join(', ')}`);
+      
+      // 先移轉訂閱到保留的站點
+      for (const rid of removeIds) {
+        await supabase.from('subscriptions').delete().eq('stop_id', rid);
+      }
+      // 確保保留的站點有訂閱
+      await supabase.from('subscriptions').upsert(
+        { group_id: GROUP_ID, stop_id: keepId },
+        { onConflict: 'group_id,stop_id' }
+      );
+      // 刪除重複站點
+      for (const rid of removeIds) {
+        await supabase.from('stops').delete().eq('id', rid);
+      }
+      console.log('  ✅ 清理完成');
     }
-    // 確保保留的站點有訂閱
-    await supabase.from('subscriptions').upsert(
-      { group_id: GROUP_ID, stop_id: keepId },
-      { onConflict: 'group_id,stop_id' }
-    );
-    // 刪除重複站點
-    for (const rid of removeIds) {
-      await supabase.from('stops').delete().eq('id', rid);
-    }
-    console.log('  ✅ 清理完成');
   } else {
     console.log('  ✅ 無重複站點');
   }

@@ -296,3 +296,101 @@ test('check-weather - sends notification and records last_notified_at when condi
   }
 });
 
+test('check-weather - aborts notifications when quota is exhausted or melted via reserveQuota (FIX-11)', async () => {
+  const originalSecret = process.env.CRON_SECRET;
+  const originalDryRun = process.env.DRY_RUN;
+  process.env.CRON_SECRET = 'valid-secret';
+  process.env.DRY_RUN = 'true';
+
+  const OriginalDate = Date;
+  global.Date = class extends OriginalDate {
+    constructor(...args) {
+      if (args.length === 0) return new OriginalDate('2026-09-02T02:00:00Z'); // 10:00 TW
+      return new OriginalDate(...args);
+    }
+  };
+
+  let releasedClaimId = null;
+  mock.method(supabase, 'from', (table) => {
+    if (table === 'subscriptions') {
+      return {
+        select: () => ({
+          eq: async () => ({
+            data: [
+              {
+                group_id: 'G1',
+                stop_id: 301,
+                stops: { lat: 25.0, lng: 121.0, name: '測試站點' },
+              },
+            ],
+            error: null,
+          }),
+        }),
+      };
+    }
+    if (table === 'weather_check_status') {
+      return {
+        select: () => ({
+          in: async () => ({ data: [], error: null }),
+        }),
+        upsert: async () => ({ error: null }),
+      };
+    }
+    return {};
+  });
+
+  mock.method(supabase, 'rpc', (fn, params) => {
+    if (fn === 'claim_notification') {
+      return { data: 888, error: null };
+    }
+    if (fn === 'reserve_quota') {
+      // 模擬配額耗盡 / 熔斷
+      return { data: [{ reserved: false, used_count: 200, newly_melted: false }], error: null };
+    }
+    if (fn === 'release_notification_claim') {
+      releasedClaimId = params.p_log_id;
+      return { error: null };
+    }
+    return { data: null, error: null };
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    if (url.includes('air-quality-api')) {
+      return {
+        ok: true,
+        json: async () => ({ hourly: { time: ['2026-09-02T10:00', '2026-09-02T11:00'], pm2_5: [10, 10] } }),
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        hourly: {
+          time: ['2026-09-02T10:00', '2026-09-02T11:00'],
+          precipitation: [0, 2.0],
+          precipitation_probability: [10, 80],
+          uv_index: [1, 2],
+        },
+      }),
+    };
+  };
+
+  const req = { headers: { authorization: 'Bearer valid-secret' } };
+  const res = mockResponse();
+
+  try {
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.notificationsSent, 0, '額度耗盡時不應發送推播');
+    assert.equal(releasedClaimId, 888, '應釋放該筆 notification claim');
+  } finally {
+    process.env.CRON_SECRET = originalSecret;
+    process.env.DRY_RUN = originalDryRun;
+    global.Date = OriginalDate;
+    globalThis.fetch = originalFetch;
+    mock.reset();
+  }
+});
+
+
