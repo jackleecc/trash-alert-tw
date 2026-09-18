@@ -14,6 +14,10 @@ import express from 'express';
 import checkTrucksHandler from './api/check-trucks.js';
 import checkWeatherHandler from './api/check-weather.js';
 import lineWebhookHandler from './api/line-webhook.js';
+import tainanRelayHandler from './api/tainan-relay.js';
+
+// 允許台灣政府專屬 TWCA / GCA 憑證通過 (解決 Linux 預設憑證庫缺少 TWCA 根憑證導致的 fetch failed)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 // 全域未捕捉例外防護，避免容器無日誌靜默退出
 process.on('uncaughtException', (err) => {
@@ -53,6 +57,7 @@ app.get(['/', '/health'], (req, res) => {
 app.all('/api/check-trucks', (req, res) => checkTrucksHandler(req, res));
 app.all('/api/check-weather', (req, res) => checkWeatherHandler(req, res));
 app.all('/api/line-webhook', (req, res) => lineWebhookHandler(req, res));
+app.all('/api/tainan-relay', (req, res) => tainanRelayHandler(req, res));
 
 // 3. 捕捉未定義路由
 app.use((req, res) => {

@@ -63,7 +63,7 @@ test('fetchTrucksWithRetry - pauses and alerts after max failures', async () => 
   const originalDryRun = process.env.DRY_RUN;
   process.env.DRY_RUN = 'true';
   mock.method(supabase, 'from', () => ({
-    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { api_fail_count: 2 }, error: null }) }) }),
+    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { api_fail_count: 9 }, error: null }) }) }),
     upsert: async () => ({ error: null })
   }));
 
@@ -73,10 +73,47 @@ test('fetchTrucksWithRetry - pauses and alerts after max failures', async () => 
   try {
     const res = await fetchTrucksWithRetry('2026-09-02');
     assert.equal(res.ok, false);
-    assert.equal(res.paused, true); // 2 + 1 = 3 >= MAX_RETRY_COUNT (3)
-    assert.equal(res.retryCount, 3);
+    assert.equal(res.paused, true); // 9 + 1 = 10 >= MAX_RETRY_COUNT (10)
+    assert.equal(res.retryCount, 10);
   } finally {
     process.env.DRY_RUN = originalDryRun;
+    global.fetch = originalFetch;
+    mock.restoreAll();
+  }
+});
+
+test('fetchTrucksWithRetry - automatically fails over to TAINAN_BACKUP_PROXY_URL when primary fails', async () => {
+  const originalBackup = process.env.TAINAN_BACKUP_PROXY_URL;
+  process.env.TAINAN_BACKUP_PROXY_URL = 'https://backup-proxy.test/cars';
+
+  mock.method(supabase, 'from', () => ({
+    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { api_fail_count: 0 }, error: null }) }) }),
+    update: () => ({ eq: async () => ({ error: null }) }),
+  }));
+
+  const originalFetch = global.fetch;
+  global.fetch = async (url) => {
+    if (url.includes('backup-proxy.test')) {
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          DATA: [
+            { route_id: '70', car_id: 'BACKUP-888', caption: '台南市永康區', dt: '2026-09-17 19:40:00', lng: 120.26, lat: 23.01 }
+          ]
+        })
+      };
+    }
+    throw new Error('Primary failed');
+  };
+
+  try {
+    const res = await fetchTrucksWithRetry('2026-09-17', undefined, ['台南市']);
+    assert.equal(res.ok, true);
+    assert.equal(res.data.length, 1);
+    assert.equal(res.data[0].car_id, 'BACKUP-888');
+  } finally {
+    process.env.TAINAN_BACKUP_PROXY_URL = originalBackup;
     global.fetch = originalFetch;
     mock.restoreAll();
   }
