@@ -239,3 +239,35 @@ test('Case 5: computeClosestTrucks returns nearest vehicle per subscribed stop w
   assert.equal(fallbackClosest[0].closestTruck.carId, 'TRUCK-OTHER');
   assert.equal(fallbackClosest[0].closestTruck.isTargetRoute, false);
 });
+
+test('Case 6: formatArrivalMessage formats weather title and appends quota info when provided', () => {
+  const msg = formatArrivalMessage({
+    routeName: '路十七線',
+    stopName: '中山南路146號',
+    distance: 85,
+    carId: 'KEK-3178',
+    weatherDesc: '☀️ 降雨機率：10%（天氣良好，免帶雨具）\n🍃 空氣品質：PM2.5 12 μg/m³（良好）',
+    stopLat: 24.9076,
+    stopLng: 121.1365,
+    quotaInfo: {
+      usedCount: 29,
+      remaining: 171,
+    },
+  });
+
+  assert.ok(msg.includes('⛅【出門天氣速報】'), '天氣區塊標題應為 ⛅【出門天氣速報】');
+  assert.ok(msg.includes('☀️ 降雨機率：10%'), '應包含天氣內容');
+  assert.ok(msg.includes('📊 本月推播額度：已用 29 / 剩餘 171'), '最末行應包含額度資訊');
+});
+
+test('Case 7: formatArrivalMessage preserves backward compatibility when quotaInfo is omitted', () => {
+  const msg = formatArrivalMessage({
+    routeName: '路十七線',
+    stopName: '中山南路146號',
+    distance: 85,
+    carId: 'KEK-3178',
+  });
+
+  assert.ok(!msg.includes('📊 本月推播額度'), '未提供 quotaInfo 時不應顯示額度');
+  assert.ok(!msg.includes('⛅【出門天氣速報】'), '未提供天氣時不應顯示天氣區塊');
+});

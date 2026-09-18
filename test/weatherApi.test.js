@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkUpcomingRain } from '../lib/weatherApi.js';
+import { checkUpcomingRain, formatArrivalWeatherSummary } from '../lib/weatherApi.js';
 
 test('checkUpcomingRain - accurately parses rainy conditions when prob >= 60', async () => {
   const originalFetch = globalThis.fetch;
@@ -320,5 +320,63 @@ test('checkUpcomingRain - gracefully handles fetch timeout via AbortError (FIX-9
   }
 });
 
+test('formatArrivalWeatherSummary - formats clear weather with rain prob and PM2.5, excluding UV', () => {
+  const weather = {
+    willRain: false,
+    prob: 10,
+    precipitation: 0,
+    uvIndex: 2,
+    uvWarning: false,
+    pm25: 12,
+    pmWarning: false,
+  };
 
+  const summary = formatArrivalWeatherSummary(weather);
+  assert.ok(summary.includes('☀️ 降雨機率：10%（天氣良好，免帶雨具）'), '應包含良好降雨資訊');
+  assert.ok(summary.includes('🍃 空氣品質：PM2.5 12 μg/m³（良好）'), '應包含良好空氣品質資訊');
+  assert.equal(summary.includes('紫外線'), false, '到站速報不應包含紫外線');
+  assert.equal(summary.includes('UV'), false, '到站速報不應包含 UV');
+});
 
+test('formatArrivalWeatherSummary - formats rain alert and PM2.5 warning, excluding UV', () => {
+  const weather = {
+    willRain: true,
+    prob: 80,
+    precipitation: 5.2,
+    uvIndex: 9,
+    uvWarning: true,
+    pm25: 75,
+    pmWarning: true,
+  };
+
+  const summary = formatArrivalWeatherSummary(weather);
+  assert.ok(summary.includes('🌧️ 降雨機率：80% / 預估雨量：5.2mm（將有降雨，出門請攜帶雨具🌂）'), '應包含降雨警報');
+  assert.ok(summary.includes('😷 空氣品質：PM2.5 75 μg/m³（不良，建議配戴口罩防護😷）'), '應包含 PM2.5 警報');
+  assert.equal(summary.includes('紫外線'), false, '到站速報不應包含紫外線');
+  assert.equal(summary.includes('UV'), false, '到站速報不應包含 UV');
+});
+
+test('formatArrivalWeatherSummary - handles null or undefined safely', () => {
+  assert.equal(formatArrivalWeatherSummary(null), '');
+  assert.equal(formatArrivalWeatherSummary(undefined), '');
+});
+
+test('formatArrivalWeatherSummary - returns empty string when forecast failed or incomplete to avoid false clean weather', () => {
+  const failed = {
+    shouldNotify: false,
+    willRain: false,
+    prob: 0,
+    precipitation: 0,
+    desc: '氣象預報讀取失敗',
+  };
+  assert.equal(formatArrivalWeatherSummary(failed), '');
+
+  const incomplete = {
+    shouldNotify: false,
+    willRain: false,
+    prob: 0,
+    precipitation: 0,
+    desc: '無法取得完整的預報資料',
+  };
+  assert.equal(formatArrivalWeatherSummary(incomplete), '');
+});
