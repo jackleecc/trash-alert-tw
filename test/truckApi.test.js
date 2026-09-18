@@ -363,6 +363,8 @@ test('fetchTrucksWithRetry - partial failure accumulates city fail counts withou
 });
 
 test('fetchTrucksWithRetry - partial failure pauses city when reaching MAX_RETRY_COUNT (FIX-2)', async () => {
+  const originalMaxRetry = process.env.MAX_RETRY_COUNT;
+  process.env.MAX_RETRY_COUNT = '3';
   let upsertPayload = null;
   mock.method(supabase, 'from', () => ({
     select: () => ({
@@ -452,6 +454,8 @@ test('fetchTrucksWithRetry - clears paused city upon recovery even if failCount 
 });
 
 test('fetchTrucksWithRetry - global failure with empty targetCities correctly maps failedCities (FIX-4)', async () => {
+  const originalMaxRetry = process.env.MAX_RETRY_COUNT;
+  process.env.MAX_RETRY_COUNT = '3';
   let upsertPayload = null;
   mock.method(supabase, 'from', () => ({
     select: () => ({
@@ -489,6 +493,7 @@ test('fetchTrucksWithRetry - global failure with empty targetCities correctly ma
     assert.ok(upsertPayload.paused_cities.includes('桃園市'));
     assert.ok(upsertPayload.paused_cities.includes('台南市'));
   } finally {
+    process.env.MAX_RETRY_COUNT = originalMaxRetry;
     global.fetch = originalFetch;
     mock.restoreAll();
   }

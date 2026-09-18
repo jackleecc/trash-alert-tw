@@ -13,43 +13,32 @@
  * 7. 若有額度，發送 LINE 氣象推播通知。
  */
 
-import crypto from 'node:crypto';
 import { supabase } from '../lib/supabaseClient.js';
-import { sendLinePushMessage } from '../lib/lineClient.js';
+import { dispatchNotification } from '../lib/notificationDispatcher.js';
 import { checkUpcomingRain } from '../lib/weatherApi.js';
 import { getTaiwanNow, isWeatherQuietHours } from '../lib/timeUtils.js';
-import { reserveQuota, releaseQuotaReservation } from '../lib/quotaService.js';
+import { recordExecutionLog } from '../lib/logger.js';
+import { guardEndpoint } from '../lib/endpointGuard.js';
 
 const COOLDOWN_NOTIFIED_MS = 6 * 60 * 60 * 1000; // 發送過通知：冷卻 6 小時
 const COOLDOWN_UNNOTIFIED_MS = 25 * 60 * 1000; // 查詢但未通知：冷卻 30 分鐘 (保留 25 分鐘排程抖動緩衝)
 
-/**
- * 安全字串比對，防禦 Timing Attack
- */
-function safeCompare(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
 export default async function handler(req, res) {
-  const CRON_SECRET = process.env.CRON_SECRET;
-  const authHeader = req.headers['authorization'] ?? '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-
-  // 1. 驗證 CRON_SECRET
-  if (!CRON_SECRET || !safeCompare(token, CRON_SECRET)) {
-    console.warn('[CheckWeather] 授權失敗，拒絕請求。');
-    return res.status(401).json({ ok: false, reason: 'Unauthorized' });
-  }
+  const guardResult = await guardEndpoint(req, res, { endpointName: '/api/check-weather' });
+  if (!guardResult.authorized) return;
+  const { triggerSource } = guardResult;
 
   const { dateStr } = getTaiwanNow();
 
   // 2. 檢查是否在夜間 0:00~7:00 靜音時段
   if (isWeatherQuietHours()) {
     console.log(`[CheckWeather] 目前處於夜間靜音時段 (00:00~07:00)，略過氣象檢查 (${dateStr})。`);
+    await recordExecutionLog({
+      status: 'skipped',
+      reason: 'quiet-hours',
+      triggerSource,
+      dateStr,
+    });
     return res.status(200).json({ ok: true, skipped: true, reason: 'quiet-hours' });
   }
 
@@ -73,6 +62,12 @@ export default async function handler(req, res) {
 
     if (!subs || subs.length === 0) {
       console.log('[CheckWeather] 無任何啟用中的群組或訂閱站點，略過。');
+      await recordExecutionLog({
+        status: 'skipped',
+        reason: 'no-active-groups',
+        triggerSource,
+        dateStr,
+      });
       return res.status(200).json({ ok: true, skipped: true, reason: 'no-active-groups' });
     }
 
@@ -148,41 +143,25 @@ export default async function handler(req, res) {
         
         // 對每個訂閱該站點的群組進行通知檢查
         for (const groupId of stop.groups) {
-          // 檢查冷卻時間：6 小時 (360 分鐘)
-          const { data: logId, error: claimError } = await supabase.rpc('claim_notification', {
-            p_group_id: groupId,
-            p_route_id: 'WEATHER',
-            p_stop_id: stop.stop_id,
-            p_car_id: 'OpenMeteo',
-            p_cooldown_minutes: 360
+          const message = `⚠️ 【環境與氣象預報提醒】\n您關注的清運點「${stop.name}」附近，未來一小時有以下狀況：\n\n${desc}`;
+          const dispatchRes = await dispatchNotification({
+            groupId,
+            routeId: 'WEATHER',
+            stopId: stop.stop_id,
+            carId: 'OpenMeteo',
+            messageText: message,
+            cooldownMinutes: 360,
           });
 
-          if (claimError || !logId) {
-            // 沒有取得 logId 代表還在冷卻期內，略過
-            continue;
-          }
-
-          // 檢查發送額度 (FIX-11: 透過 reserveQuota 統一管理額度並確保觸發熔斷告警)
-          const quotaReservation = await reserveQuota(currentMonth);
-
-          if (!quotaReservation.reserved) {
-            console.warn(`[CheckWeather] 額度耗盡或已熔斷，無法發送氣象推播 (${groupId})。`);
-            await supabase.rpc('release_notification_claim', { p_log_id: logId });
-            break;
-          }
-
-          // 發送推播
-          const message = `⚠️ 【環境與氣象預報提醒】\n您關注的清運點「${stop.name}」附近，未來一小時有以下狀況：\n\n${desc}`;
-          const pushRes = await sendLinePushMessage(groupId, message);
-
-          if (pushRes.ok) {
+          if (dispatchRes.ok && dispatchRes.status === 'sent') {
             notificationsSent++;
             stopNotified = true;
             console.log(`[CheckWeather] 已發送警報至群組 ${groupId} (站點 ${stop.name})`);
-          } else {
-            console.error(`[CheckWeather] 發送 LINE 訊息失敗 (${groupId}):`, pushRes.error);
-            await supabase.rpc('release_notification_claim', { p_log_id: logId });
-            await releaseQuotaReservation(currentMonth);
+          } else if (dispatchRes.status === 'quota_melted') {
+            console.warn(`[CheckWeather] 額度耗盡或已熔斷，無法發送氣象推播 (${groupId})。`);
+            break;
+          } else if (dispatchRes.status === 'delivery_failed') {
+            console.error(`[CheckWeather] 發送 LINE 訊息失敗 (${groupId}):`, dispatchRes.error);
           }
         }
       } else {
@@ -207,6 +186,14 @@ export default async function handler(req, res) {
       }
     }
 
+    await recordExecutionLog({
+      status: 'success',
+      reason: 'completed',
+      triggerSource,
+      sentNotifications: notificationsSent,
+      dateStr,
+    });
+
     return res.status(200).json({
       ok: true,
       totalStops: stopMap.size,
@@ -217,6 +204,13 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error(`[CheckWeather] 執行過程發生錯誤:`, err.message);
+    await recordExecutionLog({
+      status: 'error',
+      reason: 'weather-check-failed',
+      triggerSource,
+      details: { error: err.message },
+      dateStr,
+    });
     return res.status(500).json({ ok: false, error: err.message });
   }
 }

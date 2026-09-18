@@ -11,44 +11,18 @@
  *   6. 歷程登記：寫入 notification_logs 與 execution_logs 供儀表板追蹤。
  */
 
-import crypto from 'node:crypto';
 import { supabase } from '../lib/supabaseClient.js';
-import { isInCooldown, recordNotificationLog } from '../lib/cooldownService.js';
-import { sendLinePushMessage } from '../lib/lineClient.js';
+import { dispatchNotification } from '../lib/notificationDispatcher.js';
 import { recordExecutionLog, extractTriggerSource } from '../lib/logger.js';
-
-function safeCompare(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
-}
+import { guardEndpoint } from '../lib/endpointGuard.js';
 
 export default async function handler(req, res) {
-  const triggerSource = extractTriggerSource(req);
-  const CRON_SECRET = process.env.CRON_SECRET;
-
-  // 1. 安全校驗：驗證密鑰 (支援 Header x-cron-secret / x-relay-secret / Authorization Bearer / Body secret / Query secret)
-  const authHeader = req.headers['authorization'] ?? '';
-  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  const incomingToken =
-    req.headers['x-cron-secret'] ||
-    req.headers['x-relay-secret'] ||
-    bearerToken ||
-    req.body?.secret ||
-    req.query?.secret;
-
-  if (!CRON_SECRET || !safeCompare(String(incomingToken || ''), CRON_SECRET)) {
-    console.warn(`[TainanRelay] 授權失敗，拒絕請求 (來源: ${triggerSource})。`);
-    await recordExecutionLog({
-      status: 'unauthorized',
-      reason: 'invalid-secret',
-      triggerSource,
-      details: { path: '/api/tainan-relay' },
-    });
-    return res.status(401).json({ ok: false, error: 'Unauthorized: Invalid secret' });
-  }
+  const guardResult = await guardEndpoint(req, res, {
+    endpointName: '/api/tainan-relay',
+    unauthorizedReason: 'invalid-secret'
+  });
+  if (!guardResult.authorized) return;
+  const { triggerSource } = guardResult;
 
   const {
     title = '',
@@ -155,12 +129,6 @@ export default async function handler(req, res) {
     let cooldownCount = 0;
 
     for (const groupId of activeGroupIds) {
-      const inCool = await isInCooldown(groupId, routeIdStr, targetStop.id, 30);
-      if (inCool) {
-        cooldownCount++;
-        continue;
-      }
-
       // 格式化推播訊息 (特別註明為官方 App 原生即時連動)
       const alertMessage = [
         `🚛【垃圾車即將抵達提醒 (臺南環保通)】`,
@@ -177,10 +145,19 @@ export default async function handler(req, res) {
         .filter(Boolean)
         .join('\n');
 
-      const pushRes = await sendLinePushMessage(groupId, alertMessage);
-      if (pushRes.ok) {
+      const dispatchRes = await dispatchNotification({
+        groupId,
+        routeId: routeIdStr,
+        stopId: targetStop.id,
+        carId: car_id || 'TNEPB-APP',
+        messageText: alertMessage,
+        cooldownMinutes: 30,
+      });
+
+      if (dispatchRes.ok && dispatchRes.status === 'sent') {
         successCount++;
-        await recordNotificationLog(groupId, routeIdStr, targetStop.id, car_id || 'TNEPB-APP');
+      } else if (dispatchRes.status === 'in_cooldown') {
+        cooldownCount++;
       }
     }
 

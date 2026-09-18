@@ -129,6 +129,17 @@ test('tainanRelayHandler - successfully processes notification and triggers push
     },
   });
 
+  const originalRpc = supabase.rpc;
+  supabase.rpc = async (fn) => {
+    if (fn === 'claim_notification') {
+      return { data: 101, error: null };
+    }
+    if (fn === 'reserve_quota') {
+      return { data: [{ reserved: true, used_count: 5, newly_melted: false }], error: null };
+    }
+    return { data: null, error: null };
+  };
+
   try {
     await tainanRelayHandler(req, res);
     assert.equal(res.statusCode, 200);
@@ -141,6 +152,7 @@ test('tainanRelayHandler - successfully processes notification and triggers push
     assert.match(pushedPayload.messages[0].text, /臺南環保通/);
   } finally {
     supabase.from = originalFrom;
+    supabase.rpc = originalRpc;
     global.fetch = originalFetch;
   }
 });
@@ -207,6 +219,14 @@ test('tainanRelayHandler - blocks duplicate notification during cooldown period'
     },
   });
 
+  const originalRpc = supabase.rpc;
+  supabase.rpc = async (fn) => {
+    if (fn === 'claim_notification') {
+      return { data: null, error: null };
+    }
+    return { data: null, error: null };
+  };
+
   try {
     await tainanRelayHandler(req, res);
     assert.equal(res.statusCode, 200);
@@ -215,5 +235,6 @@ test('tainanRelayHandler - blocks duplicate notification during cooldown period'
     assert.equal(res.bodyData.cooldownCount, 1);
   } finally {
     supabase.from = originalFrom;
+    supabase.rpc = originalRpc;
   }
 });
