@@ -76,11 +76,6 @@ export default async function handler(req, res) {
           );
         }
 
-        // 若依然沒有匹配，但為臺南相關通知，預設指向 Stop 6 (永康區文化路40號)
-        if (!targetStop) {
-          targetStop = allStops.find((s) => s.id === 6) || allStops.find((s) => s.routes?.city === '台南市');
-        }
-
         if (targetStop) {
           targetRoute = targetStop.routes;
         }
@@ -149,6 +144,8 @@ export default async function handler(req, res) {
         groupId,
         routeId: routeIdStr,
         stopId: targetStop.id,
+        stopName: targetStop.name,
+        city: '台南市',
         carId: car_id || 'TNEPB-APP',
         messageText: alertMessage,
         cooldownMinutes: 30,

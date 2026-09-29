@@ -16,8 +16,11 @@ import checkWeatherHandler from './api/check-weather.js';
 import lineWebhookHandler from './api/line-webhook.js';
 import tainanRelayHandler from './api/tainan-relay.js';
 
-// 允許台灣政府專屬 TWCA / GCA 憑證通過 (解決 Linux 預設憑證庫缺少 TWCA 根憑證導致的 fetch failed)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// 僅在特定環境缺少 TWCA/GCA 憑證庫且明確設定 ALLOW_INSECURE_TLS 時才允許降級，防範 MITM (FIX-7)
+if (process.env.ALLOW_INSECURE_TLS === 'true') {
+  console.warn('⚠️ [TLS Warning] ALLOW_INSECURE_TLS 已啟用，暫時停用嚴格 TLS 憑證檢查');
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
 
 // 全域未捕捉例外防護，避免容器無日誌靜默退出
 process.on('uncaughtException', (err) => {

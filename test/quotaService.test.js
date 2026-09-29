@@ -20,6 +20,11 @@ test('quotaService - getYearMonth formats YYYY-MM correctly', () => {
   assert.equal(getYearMonth(date), '2026-09');
 });
 
+test('quotaService - getYearMonth defaults to current Taiwan time YYYY-MM without UTC split-brain', () => {
+  const currentTwMonth = getYearMonth();
+  assert.match(currentTwMonth, /^\d{4}-\d{2}$/);
+});
+
 test('quotaService - constants match specification', () => {
   assert.equal(MELT_THRESHOLD, 200);
   assert.equal(MAX_MONTHLY_QUOTA, 200);

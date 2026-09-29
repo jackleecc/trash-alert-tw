@@ -238,3 +238,44 @@ test('tainanRelayHandler - blocks duplicate notification during cooldown period'
     supabase.rpc = originalRpc;
   }
 });
+
+test('tainanRelayHandler - returns 404 for unmatched notification without false positive fallback', async () => {
+  process.env.CRON_SECRET = 'test-secret-123';
+  const originalFrom = supabase.from;
+
+  supabase.from = (table) => {
+    if (table === 'stops') {
+      return {
+        select: () => ({
+          data: [
+            {
+              id: 6,
+              name: '永康區文化路40號',
+              route_id: 70,
+              routes: { id: 70, name: '永康-夜間31', city: '台南市' },
+            },
+          ],
+          error: null,
+        }),
+      };
+    }
+    return { insert: async () => ({ error: null }) };
+  };
+
+  const { req, res } = createMockReqRes({
+    headers: { 'x-cron-secret': 'test-secret-123' },
+    body: {
+      title: '系統提示',
+      text: '手機電量低於 20%，請儘速充電',
+    },
+  });
+
+  try {
+    await tainanRelayHandler(req, res);
+    assert.equal(res.statusCode, 404);
+    assert.equal(res.bodyData.ok, false);
+    assert.equal(res.bodyData.error, 'Stop not matched from notification content');
+  } finally {
+    supabase.from = originalFrom;
+  }
+});

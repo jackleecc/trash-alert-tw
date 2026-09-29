@@ -148,6 +148,7 @@ export default async function handler(req, res) {
             groupId,
             routeId: 'WEATHER',
             stopId: stop.stop_id,
+            stopName: stop.name,
             carId: 'OpenMeteo',
             messageText: message,
             cooldownMinutes: 360,

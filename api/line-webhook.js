@@ -10,29 +10,13 @@
  *   5. 一對一私訊時，自動回覆使用者的 User ID。
  */
 
-import crypto from 'node:crypto';
 import { replyLineMessage } from '../lib/lineClient.js';
 import { supabase } from '../lib/supabaseClient.js';
-
-/**
- * 驗證 LINE Webhook 簽章（寬鬆比對，避免因 Serverless JSON 解析格式導致誤殺）
- * @param {string} bodyString
- * @param {string} signature
- * @param {string} channelSecret
- * @returns {boolean}
- */
-function verifyLineSignature(bodyString, signature, channelSecret) {
-  if (!channelSecret || !signature) return true;
-  try {
-    const hash = crypto
-      .createHmac('SHA256', channelSecret)
-      .update(bodyString)
-      .digest('base64');
-    return hash === signature;
-  } catch {
-    return false;
-  }
-}
+import {
+  verifyWebhookSignature,
+  CHANNEL_TAOYUAN,
+  CHANNEL_DEFAULT,
+} from '../lib/channelService.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -40,19 +24,19 @@ export default async function handler(req, res) {
   }
 
   const signature = req.headers['x-line-signature'] || '';
-  const channelSecret = process.env.LINE_CHANNEL_SECRET;
-
   const rawBody =
     req.rawBody ||
     (typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}));
 
-  if (channelSecret && !verifyLineSignature(rawBody, signature, channelSecret)) {
+  const verifyResult = verifyWebhookSignature(rawBody, signature);
+  if (!verifyResult.ok) {
     console.warn('[Webhook] LINE 簽章驗證失敗，拒絕處理此請求。');
     return res.status(401).json({ ok: false, error: 'Invalid signature' });
   }
 
+  const channelId = verifyResult.channelId || CHANNEL_DEFAULT;
   const events = (req.body && req.body.events) || [];
-  console.log(`[Webhook] 收到 ${events.length} 個 LINE 事件`);
+  console.log(`[Webhook] 收到 ${events.length} 個 LINE 事件 (來源頻道: ${channelId})`);
 
   for (const event of events) {
     const replyToken = event.replyToken;
@@ -68,15 +52,21 @@ export default async function handler(req, res) {
 
       // 自動嘗試寫入 Supabase line_groups 表，省去手動執行的麻煩
       try {
+        const defaultGroupName =
+          channelId === CHANNEL_TAOYUAN
+            ? `桃園市/楊梅通知群組_${groupId.slice(-4)}`
+            : `新北市/汐止通知群組_${groupId.slice(-4)}`;
+
         await supabase.from('line_groups').upsert(
           {
             group_id: groupId,
-            group_name: `新北市/汐止通知群組_${groupId.slice(-4)}`,
+            group_name: defaultGroupName,
+            channel_id: channelId,
             is_active: true,
           },
           { onConflict: 'group_id' }
         );
-        console.log(`[Webhook] ✅ 已自動將群組 ${groupId} 登錄至資料庫 line_groups 表！`);
+        console.log(`[Webhook] ✅ 已自動將群組 ${groupId} 登錄至資料庫 line_groups 表 (頻道: ${channelId})！`);
       } catch (err) {
         console.warn(`[Webhook] 自動登錄至 line_groups 略過: ${err.message}`);
       }
@@ -84,7 +74,7 @@ export default async function handler(req, res) {
 
     // 1. Bot 被邀請加入群組事件 (join)
     if (event.type === 'join' && groupId) {
-      console.log(`[Webhook] 🤖 Bot 已加入新群組！Group ID: ${groupId}`);
+      console.log(`[Webhook] 🤖 Bot 已加入新群組！Group ID: ${groupId} (頻道: ${channelId})`);
       const text = [
         `大家好！`,
         `我是【垃圾車即時到站通知】。`,
@@ -105,7 +95,7 @@ export default async function handler(req, res) {
       ].join('\n');
 
       if (replyToken && replyToken !== '00000000000000000000000000000000') {
-        const replyRes = await replyLineMessage(replyToken, text);
+        const replyRes = await replyLineMessage(replyToken, text, { channelId });
         console.log(`[Webhook] 發送加入群組通知結果:`, replyRes);
       }
       continue;
@@ -114,7 +104,7 @@ export default async function handler(req, res) {
     // 2. 文字訊息事件 (message)
     if (event.type === 'message' && event.message?.type === 'text') {
       const userText = (event.message.text || '').trim();
-      console.log(`[Webhook] 收到文字訊息: "${userText}"，來自對象: ${groupId || userId}`);
+      console.log(`[Webhook] 收到文字訊息: "${userText}"，來自對象: ${groupId || userId} (頻道: ${channelId})`);
 
       // 寬鬆比對查詢關鍵字：包含 id、群組、group 等皆觸發回覆
       const isIdQuery = /(id|群組|group|\/id|查詢)/i.test(userText);
@@ -136,7 +126,7 @@ export default async function handler(req, res) {
         }
 
         if (replyText && replyToken && replyToken !== '00000000000000000000000000000000') {
-          const replyRes = await replyLineMessage(replyToken, replyText);
+          const replyRes = await replyLineMessage(replyToken, replyText, { channelId });
           console.log(`[Webhook] 回覆查詢 ID 結果:`, replyRes);
         }
       }
