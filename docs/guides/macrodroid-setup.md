@@ -78,22 +78,23 @@
    * **請求方法 (Request method)**：`POST`
    * **網址 (URL)**：
      ```
-     https://<你的Vercel專案網址>/api/tainan-relay
+     https://trash-alert-tw-1062111076858.asia-east1.run.app/api/tainan-relay
      ```
-     *(例如：`https://trash-alert-tw.vercel.app/api/tainan-relay`)*
+     *(備註：若有自訂網域可填寫自訂網域，此為 Google Cloud Run 專屬生產環境端點)*
    * **內容類型 (Content type)**：`application/json`
    * **要求標頭 (Headers)**：
      * 鍵 (Header name)：`x-cron-secret`
-     * 值 (Header value)：`你的CRON_SECRET` *(與你 .env / Vercel 設定的一致)*
+     * 值 (Header value)：`你的CRON_SECRET` *(與你 Cloud Run / .env 設定的一致)*
    * **要求內容主體 (Request Body)**：
      ```json
      {
+       "stop_id": 6,
        "title": "[not_title]",
        "text": "[not_body]",
        "secret": "你的CRON_SECRET"
      }
      ```
-     *(小提示：`[not_title]` 與 `[not_body]` 可點擊輸入框旁的「...」標籤選擇 MacroDroid 內建的「通知標題」與「通知文字」動態變數)*
+     *(強烈建議加入 `"stop_id": 6` 以 100% 確定性鎖定永康區文化路40號站點，免受文字匹配差異干擾；`[not_title]` 與 `[not_body]` 可點擊輸入框旁的「...」標籤選擇 MacroDroid 內建的「通知標題」與「通知文字」動態變數)*
 4. 點擊右下角勾選儲存動作。
 
 #### 3. 設定約束條件 (Constraints - 綠色區塊，推薦選填)

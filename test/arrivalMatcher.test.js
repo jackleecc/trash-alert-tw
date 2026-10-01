@@ -252,6 +252,7 @@ test('Case 6: formatArrivalMessage formats weather title and appends quota info 
     quotaInfo: {
       usedCount: 29,
       remaining: 171,
+      isProjected: true,
     },
   });
 

@@ -15,6 +15,8 @@ import { supabase } from '../lib/supabaseClient.js';
 import { dispatchNotification } from '../lib/notificationDispatcher.js';
 import { recordExecutionLog, extractTriggerSource } from '../lib/logger.js';
 import { guardEndpoint } from '../lib/endpointGuard.js';
+import { getQuotaSnapshot } from '../lib/quotaService.js';
+import { getTaiwanNow } from '../lib/timeUtils.js';
 
 export default async function handler(req, res) {
   const guardResult = await guardEndpoint(req, res, {
@@ -53,14 +55,33 @@ export default async function handler(req, res) {
     }
 
     if (!targetStop) {
+      // 查詢活躍訂閱站點集合
+      let activeSubs = [];
+      try {
+        const resSubs = await supabase
+          .from('subscriptions')
+          .select('stop_id, line_groups!inner(is_active)')
+          .eq('line_groups.is_active', true);
+        activeSubs = resSubs.data || [];
+      } catch (e) {
+        console.warn(`[TainanRelay] 查詢活躍訂閱警告: ${e.message}`);
+      }
+      const subscribedStopIdSet = new Set((activeSubs || []).map((s) => Number(s.stop_id)));
+
       // 查詢所有站點與路線
       const { data: allStops, error: stopsErr } = await supabase
         .from('stops')
         .select('*, routes(*)');
 
       if (!stopsErr && allStops && allStops.length > 0) {
+        const sortedStops = [...(allStops || [])].sort((a, b) => {
+          const subA = subscribedStopIdSet.has(Number(a.id)) ? 1 : 0;
+          const subB = subscribedStopIdSet.has(Number(b.id)) ? 1 : 0;
+          return subB - subA; // Subscribed stops first!
+        });
+
         // 先以文字關鍵字精確匹配 (如 "文化路", "永康區文化路40號", "夜間31")
-        targetStop = allStops.find(
+        targetStop = sortedStops.find(
           (s) =>
             (s.name && fullText.includes(s.name)) ||
             (s.name && fullText.includes(s.name.replace(/臺/g, '台'))) ||
@@ -69,7 +90,7 @@ export default async function handler(req, res) {
 
         // 若無直接全名匹配，嘗試部分關鍵字比對 (如 "文化路"、"40號"、"永康")
         if (!targetStop) {
-          targetStop = allStops.find(
+          targetStop = sortedStops.find(
             (s) =>
               (s.routes?.city === '台南市' || s.name?.includes('永康')) &&
               (fullText.includes('文化路') || fullText.includes('40號') || fullText.includes('永康') || fullText.includes('70') || fullText.includes('31'))
@@ -83,7 +104,23 @@ export default async function handler(req, res) {
     }
 
     if (!targetStop) {
-      console.warn(`[TainanRelay] 無法辨識對應站點，通知全文: "${fullText}"`);
+      const warnMsg = `[TainanRelay Warning] 無法辨識對應站點，收到通知: "${fullText.slice(0, 100)}"`;
+      console.warn(warnMsg);
+      try {
+        await supabase
+          .from('daily_status')
+          .update({ last_api_error: warnMsg, updated_at: new Date().toISOString() })
+          .eq('date', getTaiwanNow().dateStr);
+      } catch (dsErr) {
+        // ignore daily_status fallback errors
+      }
+
+      await recordExecutionLog({
+        status: 'warning',
+        reason: 'tainan-relay-stop-not-matched',
+        triggerSource,
+        details: { rawText: fullText },
+      });
       return res.status(404).json({
         ok: false,
         error: 'Stop not matched from notification content',
@@ -107,7 +144,17 @@ export default async function handler(req, res) {
 
     const activeGroupIds = (subscriptions || []).map((s) => s.group_id);
     if (activeGroupIds.length === 0) {
-      console.log(`[TainanRelay] 站點 [${targetStop.name}] 目前無活躍訂閱群組。`);
+      const warnMsg = `[TainanRelay Warning] 站點 [${targetStop.name}] 目前無活躍訂閱群組`;
+      console.log(warnMsg);
+      try {
+        await supabase
+          .from('daily_status')
+          .update({ last_api_error: warnMsg, updated_at: new Date().toISOString() })
+          .eq('date', getTaiwanNow().dateStr);
+      } catch (dsErr) {
+        // ignore
+      }
+
       return res.status(200).json({
         ok: true,
         stopId: targetStop.id,
@@ -117,7 +164,21 @@ export default async function handler(req, res) {
       });
     }
 
-    // 4. 逐一執行冷卻檢核與 LINE 推播
+    // 4. 取得當前頻道額度快照 (台南使用預設頻道)
+    let quotaLine = null;
+    try {
+      const quotaInfo = await getQuotaSnapshot();
+      if (quotaInfo && typeof quotaInfo.usedCount === 'number') {
+        const maxQuota = typeof quotaInfo.maxQuota === 'number' ? quotaInfo.maxQuota : 200;
+        const displayUsed = quotaInfo.usedCount + 1;
+        const displayRem = Math.max(0, maxQuota - displayUsed);
+        quotaLine = `📊 本月推播額度：已用 ${displayUsed} / 剩餘 ${displayRem}`;
+      }
+    } catch (qErr) {
+      console.warn(`[TainanRelay] 取得額度快照警告: ${qErr.message}`);
+    }
+
+    // 5. 逐一執行冷卻檢核與 LINE 推播
     const routeIdStr = String(targetRoute?.id || targetStop.route_id || '70');
     const routeName = targetRoute?.name || '永康-夜間31';
     let successCount = 0;
@@ -136,6 +197,7 @@ export default async function handler(req, res) {
           : null,
         ``,
         `💡 來源說明：手機端「臺南環保通」車機到站即時推播`,
+        quotaLine,
       ]
         .filter(Boolean)
         .join('\n');
