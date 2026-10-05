@@ -10,7 +10,7 @@
  *   5. 一對一私訊時，自動回覆使用者的 User ID。
  */
 
-import { replyLineMessage } from '../lib/lineClient.js';
+import { replyLineMessage, fetchGroupMemberCount } from '../lib/lineClient.js';
 import { supabase } from '../lib/supabaseClient.js';
 import {
   verifyWebhookSignature,
@@ -57,20 +57,42 @@ export default async function handler(req, res) {
             ? `桃園市/楊梅通知群組_${groupId.slice(-4)}`
             : `新北市/汐止通知群組_${groupId.slice(-4)}`;
 
+
+        let memberCount = null;
+        try {
+          const fetchedCount = await fetchGroupMemberCount(groupId, { channelId, fallbackCount: null });
+          if (typeof fetchedCount === 'number' && fetchedCount > 0) {
+            memberCount = fetchedCount;
+          }
+        } catch {
+          // ignore
+        }
+
+        const groupRecord = {
+          group_id: groupId,
+          group_name: defaultGroupName,
+          channel_id: channelId,
+          is_active: true,
+        };
+        if (memberCount !== null) {
+          groupRecord.member_count = memberCount;
+        }
+
         await supabase.from('line_groups').upsert(
-          {
-            group_id: groupId,
-            group_name: defaultGroupName,
-            channel_id: channelId,
-            is_active: true,
-          },
+          groupRecord,
           { onConflict: 'group_id' }
         );
-        console.log(`[Webhook] ✅ 已自動將群組 ${groupId} 登錄至資料庫 line_groups 表 (頻道: ${channelId})！`);
+        console.log(`[Webhook] ✅ 已自動將群組 ${groupId} (人數: ${memberCount ?? '保留快取'}) 登錄至資料庫 line_groups 表 (頻道: ${channelId})！`);
       } catch (err) {
         console.warn(`[Webhook] 自動登錄至 line_groups 略過: ${err.message}`);
       }
     }
+
+    // 0. 成員異動事件 (memberJoined / memberLeft)
+    if ((event.type === 'memberJoined' || event.type === 'memberLeft') && groupId) {
+      console.log(`[Webhook] 👥 群組成員異動事件 (${event.type}): ${groupId}`);
+    }
+
 
     // 1. Bot 被邀請加入群組事件 (join)
     if (event.type === 'join' && groupId) {

@@ -51,7 +51,7 @@ export default async function handler(req, res) {
       .select(`
         group_id,
         stop_id,
-        line_groups!inner(is_active),
+        line_groups!inner(*),
         stops!inner(lat, lng, name)
       `)
       .eq('line_groups.is_active', true);
@@ -83,7 +83,14 @@ export default async function handler(req, res) {
           groups: []
         });
       }
-      stopMap.get(sub.stop_id).groups.push(sub.group_id);
+      const memberCount =
+        typeof sub.line_groups?.member_count === 'number' && sub.line_groups.member_count > 0
+          ? sub.line_groups.member_count
+          : 1;
+      stopMap.get(sub.stop_id).groups.push({
+        groupId: sub.group_id,
+        memberCount,
+      });
     }
 
     // 5. 查詢 weather_check_status 表以比對站點冷卻狀態
@@ -142,7 +149,9 @@ export default async function handler(req, res) {
         console.log(`[CheckWeather] 站點 ${stop.name} (${stop.stop_id}) 觸發環境警報:\n${desc}`);
         
         // 對每個訂閱該站點的群組進行通知檢查
-        for (const groupId of stop.groups) {
+        for (const target of stop.groups) {
+          const groupId = typeof target === 'string' ? target : target.groupId;
+          const memberCount = typeof target === 'object' && target?.memberCount ? target.memberCount : 1;
           const message = `⚠️ 【環境與氣象預報提醒】\n您關注的清運點「${stop.name}」附近，未來一小時有以下狀況：\n\n${desc}`;
           const dispatchRes = await dispatchNotification({
             groupId,
@@ -150,9 +159,11 @@ export default async function handler(req, res) {
             stopId: stop.stop_id,
             stopName: stop.name,
             carId: 'OpenMeteo',
+            memberCount,
             messageText: message,
             cooldownMinutes: 360,
           });
+
 
           if (dispatchRes.ok && dispatchRes.status === 'sent') {
             notificationsSent++;

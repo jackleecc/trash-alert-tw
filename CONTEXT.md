@@ -34,6 +34,14 @@ _Avoid_: Throttle, CircuitBreak
 發送通知前以 (群組, 路線, 站點) 為鍵原子佔用之 30 分鐘防重複推播鎖。
 _Avoid_: Mutex, Lock, Dedup
 
+**Group Member Count**:
+LINE 群組內真實成員總人數，作為每次推播消耗額度之加權基準（消耗則數 = 群組人數 × 推播次數）。
+_Avoid_: UserCount, PeopleNum
+
+**Weighted Quota Deduction**:
+依據群組成員人數進行加權之原子配額保留與回滾機制，確保系統用量與 LINE 官方計費完全一致。
+_Avoid_: SingleQuotaStep, FixedDecrement
+
 **Subscription Context**:
 今日啟用的路線、站點、群組訂閱、縮時窗狀態與深度休眠標記之集合。
 _Avoid_: SubState, ContextData

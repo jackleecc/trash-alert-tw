@@ -206,12 +206,13 @@ test('check-weather - sends notification and records last_notified_at when condi
     {
       group_id: 'G1',
       stop_id: 201,
-      line_groups: { is_active: true },
+      line_groups: { is_active: true, member_count: 5 },
       stops: { lat: 25.0, lng: 121.5, name: '下雨測試站' }
     }
   ];
 
   let upsertPayload = null;
+  let reservedAmount = 0;
 
   mock.method(supabase, 'from', (table) => {
     if (table === 'subscriptions') {
@@ -235,11 +236,12 @@ test('check-weather - sends notification and records last_notified_at when condi
     return {};
   });
 
-  mock.method(supabase, 'rpc', (fn) => {
+  mock.method(supabase, 'rpc', (fn, params) => {
     if (fn === 'claim_notification') {
       return { data: 999, error: null };
     }
     if (fn === 'reserve_quota') {
+      reservedAmount = params?.p_amount;
       return { data: [{ reserved: true, used_count: 10, newly_melted: false }], error: null };
     }
     return { data: null, error: null };
@@ -282,6 +284,7 @@ test('check-weather - sends notification and records last_notified_at when condi
     assert.equal(res.body.totalStops, 1);
     assert.equal(res.body.checkedStops, 1);
     assert.equal(res.body.notificationsSent, 1);
+    assert.equal(reservedAmount, 5, 'Weather alert should pass group member count to reserve_quota');
     // 驗證 upsert 包含了 last_notified_at
     assert.ok(upsertPayload);
     assert.equal(upsertPayload.stop_id, 201);

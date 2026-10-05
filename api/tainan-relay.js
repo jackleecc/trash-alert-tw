@@ -133,7 +133,7 @@ export default async function handler(req, res) {
     // 3. 查詢訂閱該站點的有效群組清單
     const { data: subscriptions, error: subErr } = await supabase
       .from('subscriptions')
-      .select('group_id, line_groups!inner(group_id, is_active)')
+      .select('group_id, line_groups!inner(*)')
       .eq('stop_id', targetStop.id)
       .eq('line_groups.is_active', true);
 
@@ -142,8 +142,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ ok: false, error: subErr.message });
     }
 
-    const activeGroupIds = (subscriptions || []).map((s) => s.group_id);
-    if (activeGroupIds.length === 0) {
+    if (!subscriptions || subscriptions.length === 0) {
       const warnMsg = `[TainanRelay Warning] 站點 [${targetStop.name}] 目前無活躍訂閱群組`;
       console.log(warnMsg);
       try {
@@ -165,15 +164,9 @@ export default async function handler(req, res) {
     }
 
     // 4. 取得當前頻道額度快照 (台南使用預設頻道)
-    let quotaLine = null;
+    let quotaInfo = null;
     try {
-      const quotaInfo = await getQuotaSnapshot();
-      if (quotaInfo && typeof quotaInfo.usedCount === 'number') {
-        const maxQuota = typeof quotaInfo.maxQuota === 'number' ? quotaInfo.maxQuota : 200;
-        const displayUsed = quotaInfo.usedCount + 1;
-        const displayRem = Math.max(0, maxQuota - displayUsed);
-        quotaLine = `📊 本月推播額度：已用 ${displayUsed} / 剩餘 ${displayRem}`;
-      }
+      quotaInfo = await getQuotaSnapshot();
     } catch (qErr) {
       console.warn(`[TainanRelay] 取得額度快照警告: ${qErr.message}`);
     }
@@ -184,7 +177,21 @@ export default async function handler(req, res) {
     let successCount = 0;
     let cooldownCount = 0;
 
-    for (const groupId of activeGroupIds) {
+    for (const sub of subscriptions) {
+      const groupId = sub.group_id;
+      const memberCount =
+        typeof sub.line_groups?.member_count === 'number' && sub.line_groups.member_count > 0
+          ? sub.line_groups.member_count
+          : 1;
+
+      let quotaLine = null;
+      if (quotaInfo && typeof quotaInfo.usedCount === 'number') {
+        const maxQuota = typeof quotaInfo.maxQuota === 'number' ? quotaInfo.maxQuota : 200;
+        const displayUsed = quotaInfo.usedCount + memberCount;
+        const displayRem = Math.max(0, maxQuota - displayUsed);
+        quotaLine = `📊 本月推播額度：已用 ${displayUsed} / 剩餘 ${displayRem}`;
+      }
+
       // 格式化推播訊息 (特別註明為官方 App 原生即時連動)
       const alertMessage = [
         `🚛【垃圾車即將抵達提醒 (臺南環保通)】`,
@@ -209,9 +216,11 @@ export default async function handler(req, res) {
         stopName: targetStop.name,
         city: '台南市',
         carId: car_id || 'TNEPB-APP',
+        memberCount,
         messageText: alertMessage,
         cooldownMinutes: 30,
       });
+
 
       if (dispatchRes.ok && dispatchRes.status === 'sent') {
         successCount++;

@@ -46,3 +46,24 @@ test('quotaProjection - formatArrivalMessage respects isProjected flag if alread
     'Already projected quota should preserve used 1 / remaining 199'
   );
 });
+
+test('quotaProjection - formatArrivalMessage projects member-weighted count into used quota (e.g. 9 members: 36 -> 45 / 155)', () => {
+  const msg = formatArrivalMessage({
+    routeName: '楊梅區 垃圾清運路十七線',
+    stopName: '楊梅區中山南路146號',
+    distance: 45,
+    carId: 'KEK-3178',
+    quotaInfo: {
+      usedCount: 36,
+      maxQuota: 200,
+      memberCount: 9,
+    },
+  });
+
+  assert.match(
+    msg,
+    /📊 本月推播額度：已用 45 \/ 剩餘 155/,
+    'Must project 36 + 9 = 45 used, and 200 - 45 = 155 remaining'
+  );
+});
+
