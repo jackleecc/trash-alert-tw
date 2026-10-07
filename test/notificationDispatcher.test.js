@@ -259,3 +259,101 @@ test('Case 5: Batch dispatch - handles multiple intents concurrently with summar
   assert.equal(summary.errors.length, 1, 'Errors array should contain 1 failure entry');
   assert.equal(summary.errors[0].groupId, 'group-fail', 'Error should capture the failed group ID');
 });
+
+test('Case 6: Member count handling - passes explicit memberCount to reserveQuota and releaseQuotaReservation on delivery failure', async () => {
+  const calls = {
+    claimNotification: [],
+    reserveQuota: [],
+    sendLinePushMessage: [],
+    releaseNotificationClaim: [],
+    releaseQuotaReservation: []
+  };
+
+  const adapters = {
+    claimNotification: async (groupId, routeId, stopId, carId) => {
+      calls.claimNotification.push({ groupId, routeId, stopId, carId });
+      return 105;
+    },
+    reserveQuota: async (quotaKey, incrementBy) => {
+      calls.reserveQuota.push({ quotaKey, incrementBy });
+      return { reserved: true, usedCount: 20, newlyMelted: false };
+    },
+    sendLinePushMessage: async (groupId, msgText) => {
+      calls.sendLinePushMessage.push({ groupId, msgText });
+      return { ok: false, status: 500, error: 'Push failed' };
+    },
+    releaseNotificationClaim: async (logId) => {
+      calls.releaseNotificationClaim.push(logId);
+    },
+    releaseQuotaReservation: async (quotaKey, decrementBy) => {
+      calls.releaseQuotaReservation.push({ quotaKey, decrementBy });
+    }
+  };
+
+  const intent = {
+    groupId: 'test-group-member-9',
+    routeId: 'R-500',
+    stopId: 15,
+    carId: 'TRUCK-999',
+    msgText: '垃圾車即將抵達！',
+    yearMonth: '2026-09',
+    memberCount: 9
+  };
+
+  const result = await dispatchNotification(intent, adapters);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.status, 'delivery_failed');
+
+  assert.equal(calls.reserveQuota.length, 1);
+  assert.equal(calls.reserveQuota[0].quotaKey, '2026-09');
+  assert.equal(calls.reserveQuota[0].incrementBy, 9, 'reserveQuota must receive memberCount = 9');
+
+  assert.equal(calls.releaseQuotaReservation.length, 1);
+  assert.equal(calls.releaseQuotaReservation[0].quotaKey, '2026-09');
+  assert.equal(calls.releaseQuotaReservation[0].decrementBy, 9, 'releaseQuotaReservation must receive memberCount = 9');
+});
+
+test('Case 7: Member count default - defaults memberCount to 1 when unspecified in intent', async () => {
+  const calls = {
+    claimNotification: [],
+    reserveQuota: [],
+    sendLinePushMessage: [],
+    releaseNotificationClaim: [],
+    releaseQuotaReservation: []
+  };
+
+  const adapters = {
+    claimNotification: async () => 106,
+    reserveQuota: async (quotaKey, incrementBy) => {
+      calls.reserveQuota.push({ quotaKey, incrementBy });
+      return { reserved: true, usedCount: 20, newlyMelted: false };
+    },
+    sendLinePushMessage: async () => ({ ok: false, status: 500, error: 'Push failed' }),
+    releaseNotificationClaim: async () => {},
+    releaseQuotaReservation: async (quotaKey, decrementBy) => {
+      calls.releaseQuotaReservation.push({ quotaKey, decrementBy });
+    }
+  };
+
+  const intent = {
+    groupId: 'test-group-default-member',
+    routeId: 'R-600',
+    stopId: 16,
+    carId: 'TRUCK-111',
+    msgText: '垃圾車即將抵達！',
+    yearMonth: '2026-09'
+  };
+
+  const result = await dispatchNotification(intent, adapters);
+
+  assert.equal(result.ok, false);
+  assert.equal(calls.reserveQuota.length, 1);
+  assert.equal(calls.reserveQuota[0].quotaKey, '2026-09');
+  assert.equal(calls.reserveQuota[0].incrementBy, 1, 'reserveQuota must default memberCount to 1');
+
+  assert.equal(calls.releaseQuotaReservation.length, 1);
+  assert.equal(calls.releaseQuotaReservation[0].quotaKey, '2026-09');
+  assert.equal(calls.releaseQuotaReservation[0].decrementBy, 1, 'releaseQuotaReservation must default memberCount to 1');
+});
+

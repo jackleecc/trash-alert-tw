@@ -325,3 +325,150 @@ test('getQuotaSnapshot - calculates remaining quota and snapshot correctly', asy
     mock.restoreAll();
   }
 });
+
+test('reserveQuota - passes p_increment_by to reserve_quota RPC when incrementBy is specified', async () => {
+  let rpcArgs = null;
+  mock.method(supabase, 'rpc', async (rpcName, params) => {
+    rpcArgs = { rpcName, params };
+    return {
+      data: [{ reserved: true, used_count: 14, newly_melted: false }],
+      error: null
+    };
+  });
+
+  const res = await reserveQuota('2026-09', 'taoyuan', 9);
+  assert.equal(rpcArgs.rpcName, 'reserve_quota');
+  assert.equal(rpcArgs.params?.p_month, '2026-09:taoyuan');
+  assert.equal(rpcArgs.params?.p_increment_by, 9);
+  assert.equal(res.reserved, true);
+  mock.restoreAll();
+});
+
+test('releaseQuotaReservation - passes p_decrement_by to release_quota_reservation RPC when decrementBy is specified', async () => {
+  let rpcArgs = null;
+  mock.method(supabase, 'rpc', async (rpcName, params) => {
+    rpcArgs = { rpcName, params };
+    return { error: null };
+  });
+
+  await releaseQuotaReservation('2026-09', 'taoyuan', 9);
+  assert.equal(rpcArgs.rpcName, 'release_quota_reservation');
+  assert.equal(rpcArgs.params?.p_month, '2026-09:taoyuan');
+  assert.equal(rpcArgs.params?.p_decrement_by, 9);
+  mock.restoreAll();
+});
+
+test('syncLineConsumption - for channel taoyuan, returns MISSING_LINE_TOKEN when LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN is not set without fetching default token', async () => {
+  const originalDefault = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const originalTaoyuan = process.env.LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN;
+  process.env.LINE_CHANNEL_ACCESS_TOKEN = 'default_token';
+  delete process.env.LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN;
+
+  mock.method(supabase, 'from', () => ({
+    select: () => ({
+      eq: () => ({
+        maybeSingle: async () => ({
+          data: { month: '2026-09:taoyuan', used_count: 5, is_melted: false },
+          error: null,
+        }),
+      }),
+    }),
+    update: () => ({ eq: async () => ({ error: null }) }),
+  }));
+
+  let fetchCalled = false;
+  const customFetch = async () => {
+    fetchCalled = true;
+    return { ok: true, json: async () => ({ totalUsage: 10 }) };
+  };
+
+  try {
+    const res = await syncLineConsumption('2026-09', customFetch, 'taoyuan');
+    assert.equal(res.ok, false);
+    assert.equal(res.error, 'MISSING_LINE_TOKEN');
+    assert.equal(fetchCalled, false, 'Should NOT attempt to fetch with LINE_CHANNEL_ACCESS_TOKEN');
+  } finally {
+    process.env.LINE_CHANNEL_ACCESS_TOKEN = originalDefault;
+    if (originalTaoyuan !== undefined) {
+      process.env.LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN = originalTaoyuan;
+    } else {
+      delete process.env.LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN;
+    }
+    mock.restoreAll();
+  }
+});
+
+test('syncLineConsumption - for channel taoyuan, fetches with LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN when set', async () => {
+  const originalDefault = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const originalTaoyuan = process.env.LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN;
+  process.env.LINE_CHANNEL_ACCESS_TOKEN = 'default_token';
+  process.env.LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN = 'taoyuan_channel_token';
+
+  mock.method(supabase, 'from', () => ({
+    select: () => ({
+      eq: () => ({
+        maybeSingle: async () => ({
+          data: { month: '2026-09:taoyuan', used_count: 5, is_melted: false },
+          error: null,
+        }),
+      }),
+    }),
+    update: () => ({ eq: async () => ({ error: null }) }),
+  }));
+
+  let authHeader = null;
+  const customFetch = async (url, options) => {
+    authHeader = options?.headers?.Authorization;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ totalUsage: 25 }),
+    };
+  };
+
+  try {
+    const res = await syncLineConsumption('2026-09', customFetch, 'taoyuan');
+    assert.equal(res.ok, true);
+    assert.equal(authHeader, 'Bearer taoyuan_channel_token');
+  } finally {
+    process.env.LINE_CHANNEL_ACCESS_TOKEN = originalDefault;
+    if (originalTaoyuan !== undefined) {
+      process.env.LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN = originalTaoyuan;
+    } else {
+      delete process.env.LINE_CHANNEL_ACCESS_TOKEN_TAOYUAN;
+    }
+    mock.restoreAll();
+  }
+});
+
+test('getQuotaSnapshot - when channelId is taoyuan, queries system_quota with month = YYYY-MM:taoyuan', async () => {
+  let queriedMonth = null;
+  mock.method(supabase, 'from', (table) => {
+    assert.equal(table, 'system_quota');
+    return {
+      select: () => ({
+        eq: (col, val) => {
+          if (col === 'month') {
+            queriedMonth = val;
+          }
+          return {
+            maybeSingle: async () => ({
+              data: { month: val, used_count: 45, is_melted: false },
+              error: null,
+            }),
+          };
+        },
+      }),
+    };
+  });
+
+  try {
+    const snapshot = await getQuotaSnapshot('2026-09', 'taoyuan');
+    assert.equal(queriedMonth, '2026-09:taoyuan');
+    assert.equal(snapshot.month, '2026-09:taoyuan');
+    assert.equal(snapshot.usedCount, 45);
+    assert.equal(snapshot.remaining, 155);
+  } finally {
+    mock.restoreAll();
+  }
+});
