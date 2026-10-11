@@ -112,3 +112,48 @@ test('multiChannelDispatch - Taoyuan failure rolls back independent quota', asyn
   assert.equal(res.status, 'delivery_failed');
   assert.equal(calls.releaseQuotaReservation[0], '2026-09:taoyuan', 'Quota release must target Taoyuan quota key');
 });
+
+test('multiChannelDispatch - Taoyuan intent with memberCount: 9 passes memberCount to reserveQuota and releaseQuotaReservation', async () => {
+  const calls = {
+    releaseNotificationClaim: [],
+    reserveQuota: [],
+    releaseQuotaReservation: [],
+  };
+
+  const adapters = {
+    claimNotification: async () => 402,
+    reserveQuota: async (quotaKey, incrementBy) => {
+      calls.reserveQuota.push({ quotaKey, incrementBy });
+      return { reserved: true, usedCount: 5, newlyMelted: false };
+    },
+    sendLinePushMessage: async () => ({ ok: false, status: 500, error: 'LINE_API_ERROR' }),
+    releaseNotificationClaim: async (logId) => calls.releaseNotificationClaim.push(logId),
+    releaseQuotaReservation: async (quotaKey, decrementBy) => {
+      calls.releaseQuotaReservation.push({ quotaKey, decrementBy });
+    },
+  };
+
+  const taoyuanIntent = {
+    groupId: 'Cbc0aef28eb6226fafe1ea7e5a6e4487e',
+    routeId: 'lagi2-006_2_21',
+    stopId: 9,
+    city: '桃園市',
+    carId: 'KEK-3178',
+    msgText: '【桃園楊梅垃圾車即將到站】',
+    yearMonth: '2026-09',
+    memberCount: 9,
+  };
+
+  const res = await dispatchNotification(taoyuanIntent, adapters);
+  assert.equal(res.ok, false);
+  assert.equal(res.status, 'delivery_failed');
+
+  assert.equal(calls.reserveQuota.length, 1);
+  assert.equal(calls.reserveQuota[0].quotaKey, '2026-09:taoyuan');
+  assert.equal(calls.reserveQuota[0].incrementBy, 9, 'reserveQuota must receive memberCount = 9 for Taoyuan');
+
+  assert.equal(calls.releaseQuotaReservation.length, 1);
+  assert.equal(calls.releaseQuotaReservation[0].quotaKey, '2026-09:taoyuan');
+  assert.equal(calls.releaseQuotaReservation[0].decrementBy, 9, 'releaseQuotaReservation must receive memberCount = 9 for Taoyuan');
+});
+
