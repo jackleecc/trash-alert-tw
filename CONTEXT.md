@@ -60,6 +60,14 @@ _Avoid_: Scraper, Fetcher
 針對特定縣市專屬連線協定（REST JSON、ASMX POST、Session Cookie）之內部傳輸適配器。
 _Avoid_: Driver, Client
 
+**Vehicle Position Sample**:
+車輛在特定採樣時刻的位置觀測。取得來源回應的時刻不等於車輛位置的採樣時刻。
+_Avoid_: FreshResponse, CurrentPosition
+
+**Route Intake Coverage**:
+本輪需要追蹤的路線具有可用車輛動態資料的完整程度。來源連線成功不代表所需路線已有可用資料。
+_Avoid_: ApiAvailability, CitySuccess
+
 **City Pause Status**:
 特定縣市外部 API 連續連線失敗達到門檻時，當日隔離略過該縣市檢核之暫停狀態。
 _Avoid_: Blacklist, Ban

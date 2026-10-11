@@ -16,6 +16,28 @@
 > **凡有「新功能設計」或「原有功能修改」，務必嚴格依序使用三組技能：`grill-with-docs` ➔ `tdd` ➔ `code-review`。**
 > **除了使用者明示「不需要隔離環境 (worktree)」外，施工與審查的 Model 與 Effort 降檔必須嚴格遵循政策。**
 
+### Codex 適用說明（原 Gemini 模型規範保留）
+
+原文的 `flash_lite`、`flash` 與 `pro` 為 Gemini 模型規範，Gemini 執行時照原文遵循。Codex 執行時，模型與 Effort 改依下表對應，其餘流程、降檔條件、失敗證據與交接要求均不變。
+
+| 階段／任務 | 原 Gemini 設定 | Codex 設定 |
+| :--- | :--- | :--- |
+| Phase 1 & 2：發想與規格 | `flash`，High 或以上 | `gpt-6.1-sol`，High 或以上 |
+| Phase 4：機械任務 | `flash_lite`，Low | `gpt-6-luna`，Low |
+| Phase 4：新邏輯 | `flash`，Medium | `gpt-6.1-sol`，Medium |
+| Phase 4：TDD Red | `flash`，Medium | `gpt-6.1-sol`，Medium |
+| Phase 5：雙軸程式碼審查 | `flash`，High | `gpt-6.1-sol`，High |
+| 收尾／歸檔／機械性清理 | `flash_lite`，Low | `gpt-6-luna`，Low |
+
+Codex 執行細則：
+
+1. **未定任務的降檔決策**：先使用 `gpt-6-luna`／Low；實際失敗一次後，才可升至 `gpt-6.1-sol`／Medium。TDD Red 仍固定使用 `gpt-6.1-sol`／Medium。
+2. **Green 降檔手續**：使用 `gpt-6-luna`／Low 前，仍須確認 Red 為業務邏輯 assertion 的真失敗；委派時提供完整測試檔與失敗訊息原文。
+3. **High 適用範圍**：Phase 1 & 2 維持強制 High 或以上；其餘階段僅限原文的兩個例外使用 High。Phase 4 升 High 必須記錄前次 Low／Medium 的實際失敗證據與升檔原因。
+4. **模型與 Effort 分開設定**：High Effort 不代表改用更高階模型。Codex 僅使用本表指定模型；所有平台均保留原文的 `pro` 模型禁令。
+5. **設定能力限制**：只能透過環境實際提供的控制方式指定模型及 Effort。若指定模型不可用，或目前執行環境無法切換設定，須回報限制並取得使用者核准替代設定，不得自行替換或宣稱已切換。
+6. **引用規範的對應方式**：引用文件或技能要求 `flash_lite`／`flash` 時，Codex 依本節對應模型執行；其餘規範照原文遵循。
+
 ### 執行要點：
 1. **三階段技能鏈 (Three-Skill Pipeline)**：
    - **Phase 1 & 2 發想與規格 (`grill-with-docs`)**：Model 使用 `flash`、Effort 強制 **High 或以上**（省不得）。確立架構、產出 ADR、領域字典與完整規格。
