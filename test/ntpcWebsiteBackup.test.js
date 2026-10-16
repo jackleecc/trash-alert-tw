@@ -29,6 +29,16 @@ async function run(primary = [], website = { TimeStamp: '20261012180000', Line: 
   } finally { globalThis.fetch = saved; }
 }
 
+test('unset environment enables backup for a missing required route by default', async () => {
+  const saved = process.env.NTPC_WEBSITE_BACKUP_ENABLED;
+  delete process.env.NTPC_WEBSITE_BACKUP_ENABLED;
+  try {
+    const { result } = await run([], undefined, { ntpcWebsiteBackupEnabled: undefined });
+    assert.deepEqual(result.data, [{ route_id: '991001', car_id: 'FIXTURE-CAR', lat: 25.1, lng: 121.6, waste_type: 'garbage', source: 'ntpc-website', timestamp_kind: 'response', source_timestamp: '2026-10-12T10:00:00.000Z' }]);
+  } finally {
+    if (saved === undefined) delete process.env.NTPC_WEBSITE_BACKUP_ENABLED; else process.env.NTPC_WEBSITE_BACKUP_ENABLED = saved;
+  }
+});
 test('missing required route is filled by on-duty website vehicle with response provenance', async () => {
   const { result, calls } = await run();
   assert.deepEqual(result.data, [{ route_id: '991001', car_id: 'FIXTURE-CAR', lat: 25.1, lng: 121.6, waste_type: 'garbage', source: 'ntpc-website', timestamp_kind: 'response', source_timestamp: '2026-10-12T10:00:00.000Z' }]);
@@ -91,21 +101,21 @@ test('disabled, legacy, override, unrelated and paused calls preserve primary wi
   }
 });
 
-test('environment enables backup only for exact true, and explicit boolean overrides it', async () => {
+test('environment defaults on, rejects malformed flags and preserves explicit boolean overrides', async () => {
   const saved = process.env.NTPC_WEBSITE_BACKUP_ENABLED;
   try {
-    for (const flag of [undefined, 'false', 'TRUE', '1', 'true ']) {
+    for (const [flag, enabled] of [[undefined, true], ['true', true], ['false', false], ['TRUE', false], ['1', false], ['true ', false], ['', false]]) {
       if (flag === undefined) delete process.env.NTPC_WEBSITE_BACKUP_ENABLED; else process.env.NTPC_WEBSITE_BACKUP_ENABLED = flag;
-      assert.equal((await run([], undefined, { ntpcWebsiteBackupEnabled: undefined })).calls.length, 1);
+      const inherited = await run([], undefined, { ntpcWebsiteBackupEnabled: undefined });
+      assert.deepEqual(inherited.result.data.map(({ car_id }) => car_id), enabled ? ['FIXTURE-CAR'] : [], `Flag ${JSON.stringify(flag)}`);
+      assert.equal(inherited.calls.length, enabled ? 2 : 1);
+      assert.equal((await run([], undefined, { ntpcWebsiteBackupEnabled: false })).result.data.length, 0, 'Explicit false disables every environment value');
+      assert.equal((await run([], undefined, { ntpcWebsiteBackupEnabled: true })).result.data[0].car_id, 'FIXTURE-CAR', 'Explicit true enables every environment value');
     }
-    process.env.NTPC_WEBSITE_BACKUP_ENABLED = 'true';
-    assert.equal((await run([], undefined, { ntpcWebsiteBackupEnabled: undefined })).calls.length, 2);
-    assert.equal((await run([], undefined, { ntpcWebsiteBackupEnabled: false })).calls.length, 1);
   } finally {
     if (saved === undefined) delete process.env.NTPC_WEBSITE_BACKUP_ENABLED; else process.env.NTPC_WEBSITE_BACKUP_ENABLED = saved;
   }
 });
-
 test('fresh primary prevents backup while invalid or missing required GPS times are replaced', async () => {
   for (const time of ['2026-10-12 17:55:00', '2026/10/12 18:01:00', '2026-10-12T10:00:00Z', '2026-10-12T12:00:00+02:00']) {
     const { result, calls } = await run([primaryTruck('991001', time)]);

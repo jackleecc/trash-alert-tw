@@ -1,8 +1,8 @@
 # 新北官方清運網站備援規格
 
-Status: implemented; all 225 offline tests passed; both-axis code review passed. Not deployed or activated. 2026-10-12.
+Status: 2026-10-12 implementation passed all 225 offline tests and both-axis code review. Default-enable change specified on 2026-10-17; implementation, verification and deployment are separate states. See [the default-enable change](ntpc-backup-default-enable.md).
 
-使用者已同意推薦設計與兩個公開測試入口。此核准涵蓋實作、離線測試與審查；不涵蓋設定正式環境、部署或啟用備援。禁止呼叫任何 LINE API，包含推播、群組成員查詢及官方用量查詢。測試必須攔截相關依賴。
+使用者已同意推薦設計與兩個公開測試入口，並於 2026-10-17 要求直接整合先前備援，將程式預設改為啟用。此輪涵蓋來源修改、離線測試與審查；不涵蓋設定正式環境或部署。禁止呼叫任何 LINE API，包含推播、群組成員查詢及官方用量查詢。測試必須攔截相關依賴。
 
 ## 已確認的設計
 
@@ -10,7 +10,7 @@ Status: implemented; all 225 offline tests passed; both-axis code review passed.
 
 主來源仍為 `NTPC_TRUCK_API_URL`。當本輪主來源連線失敗、所需路線缺失，或該路線只有不可靠時間／超過五分鐘的 GPS 樣本時，在同一輪 POST 官方網站 `/WebAPI/GetArrival`。不等待縣市連續失敗門檻。有效主來源資料優先，網站只填補本輪缺口，不能以網站錯誤或較差資料取代有效主來源。
 
-`NTPC_WEBSITE_BACKUP_ENABLED=false` 為預設；只有精確值 `true` 啟動。整個新北補資料與新鮮度政策受此旗標控制，以維持舊呼叫向後相容。沒有所需新北路線、顯式 `overrideUrl`、或新北縣市被暫停時，不做網站查詢。取消旗標即回到既有資料擷取行為。
+`NTPC_WEBSITE_BACKUP_ENABLED` 未設定或精確值 `true` 時啟用；精確值 `false` 及其他字串關閉。整個新北補資料與新鮮度政策受此旗標控制。沒有所需新北路線、顯式 `overrideUrl`、或新北縣市被暫停時，不做網站查詢。回滾須明確設為 `false`；取消旗標會啟用。可選 boolean 呼叫選項仍優先於環境設定。
 
 ## 已確認事實與資料限制
 
@@ -60,7 +60,7 @@ Status: implemented; all 225 offline tests passed; both-axis code review passed.
 3. `BarCode` 在上述執勤 whitelist。未知状态、非执勤及 `000006` 均拒絕。
 4. 顶层 `TimeStamp` 可严格解析为台灣時間，且同样满足 `-60秒 <= responseAge <= 300秒`。此条件只验证响应新鲜度，不表示 GPS 新鲜度。
 
-網站有效資料轉成 `{ route_id: LineID, car_id: CarNO, lat: LocationLat, lng: LocationLon, waste_type: 'garbage', source: 'ntpc-website', timestamp_kind: 'response', source_timestamp: ISO8601 }`。**不得将顶层 TimeStamp 放入 `truck.time`，也不得伪造 `speed=0`、GPS 时间或到站事件。** 没有逐車 GPS 時間／速度时，保持欄位缺省，由既有遥测逻辑依真实观察时间进行后续计算，且仍受启用前新鲜度证据门槛约束。按 route_id + car_id 去重，只填补缺口路線。
+網站有效資料轉成 `{ route_id: LineID, car_id: CarNO, lat: LocationLat, lng: LocationLon, waste_type: 'garbage', source: 'ntpc-website', timestamp_kind: 'response', source_timestamp: ISO8601 }`。**不得将顶层 TimeStamp 放入 `truck.time`，也不得伪造 `speed=0`、GPS 时间或到站事件。** 没有逐車 GPS 時間／速度时，保持欄位缺省，由既有遥测逻辑依真实观察时间进行后续计算；缺少 GPS 新鲜度证据仍是已知限制。按 route_id + car_id 去重，只填补缺口路線。
 
 ## 統計、熔斷與錯誤
 
@@ -73,15 +73,15 @@ Status: implemented; all 225 offline tests passed; both-axis code review passed.
 - 主來源失败且网站失败或无可採用车辆：新北 `ok: false`，errors 汇总两端原因，沿用既有 city fail count／pause 机制。
 - 有效其他城市資料始终保留；旗標关闭、无必要 routes、暂停城市、override URL 时不产生网站请求。
 
-## 啟動程序與驗證門檻
+## 預設啟用、服務實證與部署
 
-完成實作與通過離線 TDD／雙軸 code-review 不等於正式啟用。
+2026-10-17 使用者的直接整合指示取代原先等待服務採樣才改變程式預設的安排；連續位置更新與逐車 GPS 延遲證據仍未取得。完成實作與通過離線 TDD／雙軸 code-review 不等於已部署或已完成服務實證。
 
-1. 保持 `NTPC_WEBSITE_BACKUP_ENABLED` 未設定或 false，只跑離線 fixtures，不透過 production handler／dry-run 間接觸發 LINE。
-2. 於既有路線真实服务时段進行另行核准的唯讀公用網站探查，保存多个连续原始样本、真实抓取瞬间、路线、车牌、状态、坐标变化、Point 的历史实际 Arrival，以及对照來源。不能把週日空車號樣本宣稱歷史實績成功。
-3. 在 `docs/reports/` 建立驗證报告，明确區分回應時間與位置採樣時間；证明位置更新与实际执勤有关、延迟符合五分钟容忍值。若只能看见 TimeStamp 更新而无法证实位置更新，仍不符合启用门槛，继续关闭。
+1. 本輪只跑離線 fixtures，測試 mock 所有外部邊界，不透過 production handler／dry-run 間接觸發 LINE。未設定旗標的正式預設與明確 `false` 回滾都須驗證。
+2. 後續於既有路線真实服务时段進行唯讀公用網站探查，保存多个连续原始样本、真实抓取瞬间、路线、车牌、状态、坐标变化、Point 的历史实际 Arrival，以及对照來源。不能把週日空車號樣本宣稱歷史實績成功。
+3. 在 `docs/reports/` 建立驗證报告，明确區分回應時間與位置採樣時間；核對位置更新与实际执勤是否相關、延迟是否符合五分钟容忍值。若只能看见 TimeStamp 更新而无法证实位置更新，須持續標示證據缺口，不能宣稱 GPS 新鮮度驗證通過。
 4. 说明資料缺口、两端均过期、輪詢间隔跨过站点等情境仍可能漏报。既有护栏與无时间数据无法构成「保证不会漏报」。
-5. 使用者另行核准啟用與部署後，才能把旗標设為 true；本次不能修改秘密环境文件或部署。
+5. 本次不能修改秘密环境文件或部署。正式環境是否啟用須檢查實際部署版本及環境設定；已明確設為 `false` 的環境仍關閉。
 6. 启用后的首批真实服務轮次检查採用來源、route coverage、拒絕原因与县市熔断；发现坐标冻结／错误路线／异常大量拒绝即旗标回滚 false，保留审计证据。
 
 ## 必要測試與施工交接

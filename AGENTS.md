@@ -11,64 +11,45 @@
 
 詳細規範請參閱 [.agents/rules/location-verification.md](.agents/rules/location-verification.md)。
 
-## Mandatory Development Workflow Rule (強制開發三階段流程與降檔規範)
+# Project Guidelines & Rules
 
-> **凡有「新功能設計」或「原有功能修改」，務必嚴格依序使用三組技能：`grill-with-docs` ➔ `tdd` ➔ `code-review`。**
-> **除了使用者明示「不需要隔離環境 (worktree)」外，施工與審查的 Model 與 Effort 降檔必須嚴格遵循政策。**
+## 1. Git 作業規範
+ 
+- **直接使用最輕量級模型**：所有 Git 查詢、diff/log、暫存、commit、push、branch、merge/rebase 等版本控制作業，一律直接由最輕量級模型執行或自動委派 Low 子代理（Gemini: `flash_lite` / Low；GPT: `gpt-6-luna` / Low），免除手動確認模型，亦不需載入或讀取 `git-ops` 技能。
+- ⛔ **Orchestrator Git 執行禁令**：主對話模型（Orchestrator）**嚴禁直接執行任何 `git` 相關命令**。凡在主對話中遇到或需要執行任何 Git 操作（包含 git status/diff/add/commit/push/pull 等），主對話必須一律調用 `invoke_subagent` 委派 `flash_lite`（Low）子代理執行，待子代理完成並回報後由主對話接續。
+- **權限邊界**：已授權動作直接執行；未經使用者明示授權，嚴禁 push、改寫歷史、刪除或破壞性操作。
 
-### Codex 適用說明（原 Gemini 模型規範保留）
+## 2. 開發流程與 Subagent 分層派工
 
-原文的 `flash_lite`、`flash` 與 `pro` 為 Gemini 模型規範，Gemini 執行時照原文遵循。Codex 執行時，模型與 Effort 改依下表對應，其餘流程、降檔條件、失敗證據與交接要求均不變。
+- **Orchestrator 模式**：主對話全程維持初始高階模型（負責全域狀態、`HANDOVER.md`、Phase 1–3 對齊、派工與驗收），**不在主對話中途切換模型／effort**，亦不暫停要求使用者手動切換或確認。所有工作直接在現有環境執行，不建立 worktree。
+- ⛔ **全域模型禁令**：所有階段、主對話、子代理與升檔例外，**一律禁止使用 `pro` 模型**。
 
-| 階段／任務 | 原 Gemini 設定 | Codex 設定 |
-| :--- | :--- | :--- |
-| Phase 1 & 2：發想與規格 | `flash`，High 或以上 | `gpt-6.1-sol`，High 或以上 |
-| Phase 4：機械任務 | `flash_lite`，Low | `gpt-6-luna`，Low |
-| Phase 4：新邏輯 | `flash`，Medium | `gpt-6.1-sol`，Medium |
-| Phase 4：TDD Red | `flash`，Medium | `gpt-6.1-sol`，Medium |
-| Phase 5：雙軸程式碼審查 | `flash`，High | `gpt-6.1-sol`，High |
-| 收尾／歸檔／機械性清理 | `flash_lite`，Low | `gpt-6-luna`，Low |
+| 階段 / 工作類型 | 工作與交付物 | Gemini 子代理 | GPT 子代理 | Effort | 派發規範 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Phase 1：需求訪談** | `grill-with-docs`；需求、範圍、邊界與待決問題 | `flash` | `gpt-6.1-sol` | High | 主對話執行或高階委派 |
+| **Phase 2：架構決策** | 模組職責、介面契約、ADR、領域字典、Milestone | `flash` | `gpt-6.1-sol` | High | 主對話執行或高階委派 |
+| **Phase 3：OpenSpec** | `proposal`、`specs`、`design`、`tasks`、依賴與驗收 | `flash` | `gpt-6.1-sol` | High | 主對話執行或高階委派 |
+| **Phase 4：TDD Red** | 撰寫業務驗收測試，確認真業務 assertion 失敗 | `flash` | `gpt-6-luna` | Medium | 附 Ticket 規格與驗收情境 |
+| **Phase 4：新邏輯 Green** | 新演算法、模組串接、狀態機、業務邏輯實作 | `flash` | `gpt-6-luna` | Medium | 必附測試檔全文＋失敗原文 |
+| **Phase 4：機械 Green** | 照樣板改、批次替換、純接線、參數補齊 | `flash_lite` | `gpt-6-luna` | Low | 必附測試檔全文＋失敗原文 |
+| **Phase 5A：正式審查** | `code-review` Standards＋Spec 雙軸平行審查 | `flash` (雙代理) | `gpt-6.1-sol` (雙代理) | High | 附固定 Git 基準、差異與規格 |
+| **Phase 5B：交付收尾** | 依 findings 修正、回歸測試、同步規格、archive | `flash` | `gpt-6-luna` | Medium | 修正影響結論時重跑 5A |
+| **中途重大問題分析** | 實作卡關排查、跨模組契約衝突分析 | `flash` | `gpt-6.1-sol` | High | 須符合下方例外 2，分析完回 Medium |
+| **獨立 Git 作業** | Git 查詢、commit 訊息、暫存、提交等 | `flash_lite` | `gpt-6-luna` | Low | 直接使用最輕量級模型執行／委派 |
 
-Codex 執行細則：
+## 3. High Effort 限制、開工門檻與停下條件（Stop Criteria）
 
-1. **未定任務的降檔決策**：先使用 `gpt-6-luna`／Low；實際失敗一次後，才可升至 `gpt-6.1-sol`／Medium。TDD Red 仍固定使用 `gpt-6.1-sol`／Medium。
-2. **Green 降檔手續**：使用 `gpt-6-luna`／Low 前，仍須確認 Red 為業務邏輯 assertion 的真失敗；委派時提供完整測試檔與失敗訊息原文。
-3. **High 適用範圍**：Phase 1 & 2 維持強制 High 或以上；其餘階段僅限原文的兩個例外使用 High。Phase 4 升 High 必須記錄前次 Low／Medium 的實際失敗證據與升檔原因。
-4. **模型與 Effort 分開設定**：High Effort 不代表改用更高階模型。Codex 僅使用本表指定模型；所有平台均保留原文的 `pro` 模型禁令。
-5. **設定能力限制**：只能透過環境實際提供的控制方式指定模型及 Effort。若指定模型不可用，或目前執行環境無法切換設定，須回報限制並取得使用者核准替代設定，不得自行替換或宣稱已切換。
-6. **引用規範的對應方式**：引用文件或技能要求 `flash_lite`／`flash` 時，Codex 依本節對應模型執行；其餘規範照原文遵循。
+- **High Effort 唯二例外**：
+  1. **Phase 5A `code-review`** 雙軸正式審查。
+  2. **Phase 4 / 5B 實作在 Low／Medium 下已實際失敗一次**（測試持續報紅或方向跑偏，不含預期 TDD Red 或語法／import 錯誤）。派發與交接時必須記錄**「升 High 原因＋前次失敗原文與分析」**。
+- **禁止自行升階與越權委派**：子代理（Subagent）遇阻、測試失敗或能力受限時，必須如實回報主代理，**嚴禁子代理自行升階、假裝已完成、或擅自再派發子代理**；所有升階與重派均由主代理依上述唯二例外裁決。
+- **立即停下條件（When to Stop）**：
+  - **開工前缺項即停**：派發每張 Ticket 前，必須核對 OpenSpec（`proposal`、`specs`、`design`、`tasks`、ADR）、前置 Ticket 完成證據與可執行驗收標準。若規格未定、契約模糊、架構需重決策或依賴未完成，**立即停止施工**，退回主對話 Phase 2／3 補齊規格或向使用者提問，禁止派發 High 硬幹。
+  - **完成條件即停**：所有 tasks、測試、雙軸審查（詳見 [.agents/rules/code-review.md](.agents/rules/code-review.md)）與規格 archive（詳見 [.agents/rules/development-workflow.md](.agents/rules/development-workflow.md)）全數通過才可宣告完成；無法執行的驗收必須標記為「待驗收」。
 
-### 執行要點：
-1. **三階段技能鏈 (Three-Skill Pipeline)**：
-   - **Phase 1 & 2 發想與規格 (`grill-with-docs`)**：Model 使用 `flash`、Effort 強制 **High 或以上**（省不得）。確立架構、產出 ADR、領域字典與完整規格。
-   - **Phase 3 隔離環境**：**免除**（不需要建立 worktree，直接在現有環境執行）。
-   - **Phase 4 實作委派 (`tdd`)**：必須低於 High（Low/Medium），嚴格依任務性質分層降檔：
-     - **機械 (Mechanical)**：照樣板改、批次替換、純接線 ➔ `flash_lite` (Low)。
-     - **新邏輯 (New Logic)**：新演算法、模組串接、狀態機 ➔ `flash` (Medium)。
-     - **TDD Red (寫失敗測試)**：任何 task 測試 ➔ `flash` (Medium)（避免斷言寫鬆假綠導致無法觸發升級）。
-     - **降檔決策**：不確定哪一層先用 `flash_lite`，失敗一次才升 `flash`。
-     - **Green 實作兩道手續**：降至 `flash_lite` 必須確認 ① Red 為真失敗（指向業務邏輯 assertion 非 import/語法錯誤）且 ② 交接必須附「完整測試檔 + 失敗原文」。
-   - **Phase 5 程式碼審查 (`code-review`)**：Model 使用 `flash`、Effort 為 **High**（唯二例外之一）。雙軸審查（Standards 規範與壞味道 + Spec 規格一致性）。
-2. **只有兩個例外可以升到 High Effort**：
-   - **例外 1**：Phase 5 `code-review`（雙軸審查為高階推理判斷）。
-   - **例外 2**：Phase 4 任務在 low/medium 下「實際失敗一次」（需填寫升 High 原因與失敗證據）。
-   - ⛔ **禁令**：所有任務（含各 Phase 與升檔情境）一律不得使用 `pro` 模型。
-   - ⛔ **禁令**：「任務看起來很難」或「想深一點」不准升檔，屬 Spec 未寫清楚，應退回 Phase 2 補 Spec！
+## 4. 狀態追蹤與單態交接（HANDOVER）
 
-詳細規範請參閱 [.agents/rules/development-workflow.md](.agents/rules/development-workflow.md) 與 [.agents/rules/code-review.md](.agents/rules/code-review.md)。
-
-## Mandatory Code Review Rule (程式碼審查規範)
-
-> **凡有「新功能開發」或「原有功能修改」，完成後務必使用 `code-review` skill 檢查寫好的程式碼，確認符合專案規範與規格要求後方可交付。**
-
-### 執行要點：
-1. **觸發時機**：
-   - 新功能開發 (New Feature Development)
-   - 原有功能修改、Bug 修復或重構 (Existing Feature Modification)
-2. **雙軸審查標準**：
-   - **Standards 軸**：檢查是否遵循專案規範與 Fowler 12 種程式碼壞味道（Smell baseline）。
-   - **Spec 軸**：比對需求規格，檢查是否有遺漏、未預期的範圍蔓延 (Scope Creep) 或實作缺陷。
-3. **完成條件**：雙軸審查皆通過並處理完回報問題後，方可進入測試與交付階段。
-
-詳細規範請參閱 [.agents/rules/code-review.md](.agents/rules/code-review.md)。
+- **進度維護**：每張 Ticket 與階段完成後，同步更新 OpenSpec `tasks.md`、根目錄 `HANDOVER.md`（及存在的 `.scratch/zoo-escape-roguelike/HANDOVER.md`）。新對話接手時先讀本檔、`HANDOVER.md` 與目標 OpenSpec 直接接續。
+- **單態快照（Single-state Snapshot）**：`HANDOVER.md` 永遠只保留最新一次交接快照，前次任務驗收完成後即清除舊章節（歷史依賴 Git 與 archive）。
+- **必填欄位**：目前／目標 Phase、change／Ticket／Milestone、已確認規格版本、依賴與阻礙、完成與待辦 Checklist、測試／驗收／審查證據、子代理模型／effort、下一步。
 

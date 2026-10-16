@@ -1,0 +1,35 @@
+schema: spec-driven
+
+context: |
+  Project: Trash Alert TW, a Taiwan cross-county garbage-truck tracking and arrival-notification service.
+  This repository is the trash-alert-tw application; do not apply assumptions from other repositories.
+  Language: zh-TW
+  All artifacts must be written in zh-TW.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  During checks and verification, do not send LINE messages or trigger external notifications.
+  Do not deploy to production unless the user explicitly requests deployment.
+  Keep project vocabulary in the root CONTEXT.md glossary and lasting technical decisions in docs/adr/.
+  For proposed new collection locations, require verified historical actual collection records before claiming the location is onboarded; follow AGENTS.md and .agents/rules/location-verification.md.
+  State dependencies, acceptance criteria, and checks in change artifacts. Mark unavailable checks as pending verification; never claim unverified results.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

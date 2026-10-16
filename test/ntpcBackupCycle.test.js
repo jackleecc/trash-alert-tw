@@ -4,12 +4,12 @@ import { executeTruckTrackingCycle } from '../lib/coreProcessor.js';
 import { supabase } from '../lib/supabaseClient.js';
 import { NTPC_TRUCK_API_URL, KCG_TRUCK_API_URL } from '../lib/truckIntake.js';
 
-test('cycle queries only active subscribed NTPC stops and passes the real Taiwan instant through facade', async () => {
+test('cycle with default backup queries only active subscribed NTPC stops and passes the real Taiwan instant through facade', async () => {
   const savedFetch = globalThis.fetch;
   const savedFrom = supabase.from;
   const savedFlag = process.env.NTPC_WEBSITE_BACKUP_ENABLED;
   const savedToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-  process.env.NTPC_WEBSITE_BACKUP_ENABLED = 'true';
+  delete process.env.NTPC_WEBSITE_BACKUP_ENABLED;
   process.env.LINE_CHANNEL_ACCESS_TOKEN = 'OFFLINE-FIXTURE';
   const tables = {
     routes: [
@@ -84,7 +84,7 @@ test('cycle with missing raw date uses current UTC instant rather than inventing
   const savedFetch = globalThis.fetch;
   const savedFlag = process.env.NTPC_WEBSITE_BACKUP_ENABLED;
   const savedToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-  process.env.NTPC_WEBSITE_BACKUP_ENABLED = 'true';
+  delete process.env.NTPC_WEBSITE_BACKUP_ENABLED;
   delete process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const tables = {
     routes: [{ id: '991001', city: '新北市', active_days: [2] }],
