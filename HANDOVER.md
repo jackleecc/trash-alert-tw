@@ -1,10 +1,10 @@
 # HANDOVER
 
-- **目前／目標 Phase**：規範與技能上下文精簡；使用者已確認，準備提交與推送。
-- **Change／Ticket／Milestone**：context-rules-draft（文件與本機設定整理，未建立或補造功能 OpenSpec 變更）。
-- **確認範圍**：撤回技能清單 1,000 tokens 上限；精簡 AGENTS.md；詳細派工與門檻集中至開發流程文件；審查細節引用 code-review skill；依使用者指示移除兩份全域重複 git-ops，保留全部 45 個專案 skills。
-- **依賴／阻礙**：以使用者最新 AGENTS.md 政策為準；不得採用舊流程文件中的 pro 或舊模型對應。全域技能移除後的清單更新須後續工作階段確認。
-- **完成／待辦**：前次備援預設啟用、OpenSpec 安裝與使用者 AGENTS.md 已推送 da3d9cd；本次草稿的設定、引用與政策對照檢查已完成；1,000 上限與多餘設定檔已移除；使用者已確認本次四個文件的提交與推送。
-- **測試／驗收／審查證據**：既有功能離線測試 234/234、雙軸審查通過；本次不改業務程式，僅檢查文件與設定。功能規格見 docs/specs/ntpc-backup-default-enable.md，工具與弱點稽核見 docs/reports/openspec-install-audit-2026-10-17.md。
-- **子代理模型／Effort**：草稿整理 gpt-6-luna／Medium；Git 查詢 gpt-6-luna／Low。
-- **下一步**：提交並推送本次核准的四個文件，確認遠端提交一致。正式部署、實車 GPS 新鮮度／延遲仍待驗收；禁止實際 LINE API。
+- **目前／目標 Phase**：Phase5B開發驗收與規格封存完成；Git交付依使用者明示授權commit＋push，實際SHA與遠端查核結果見Git紀錄及本對話交付回報。
+- **Change／Ticket／Milestone**：xizhi-arrival-confirmation，8／8任務完成；封存openspec/changes/archive/2026-10-23-xizhi-arrival-confirmation。主規格openspec/specs/collection-approach-confirmation/spec.md，ADR0012。
+- **已確認規格版本**：2026-10-23使用者同意五點方案並授權修改與commit＋push。保護route221010／正式Stop3，其他地點匹配語意保留，共用文案取消固定ETA。
+- **依賴／阻礙**：SQL僅交付檔案，未套正式DB；未執行部署或LINE呼叫。網站response-only不能確認GPS，可能延後／漏報。正式跨實例與實際清運驗收待執行。
+- **完成／待辦 Checklist**：完成需求、ADR／OpenSpec、TDD、共享CAS／audit、來源metadata、最新批次候選、文案、離線工具、雙軸修正重審、規格同步與archive。待正式SQL、部署與實車驗收，不以離線結果宣告正式恢復。
+- **測試／驗收／審查證據**：主代理npm test 290／290、0 skipped；PGlite0.5.11／PostgreSQL18.6 SQL11／11；OpenSpec change及主規格strict validate通過，封存前8／8、封存後active changes空。Standards首輪3項／最嚴重P2、Spec首輪1項／P2均已修正；各High代理重審皆0未解／0新增，獨立focused39／39。報告docs/reports/xizhi-arrival-confirmation-2026-10-23.md分軸保存原findings。基準1e94d02a1b776aa98211b3b79919c01c95991f61；重審差異SHA2568165cb3f6192d01068e1d2c0199987adc4e9339717133abd8ecf3b24c190ba78。
+- **子代理模型／effort**：規劃gpt-6.1-sol／High；施工與5B修正gpt-6-luna／Medium；5A gpt-6.1-sol／High雙代理；Git gpt-6-luna／Low。主代理初始模型／effort不變，無worktree。
+- **下一步**：完成已授權Git交付並核對遠端SHA；正式SQL套用與部署須另行授權，順序及驗收限制見docs/collection-approach-confirmation.md。不得用實際LINE呼叫消耗額度測試。

@@ -80,6 +80,32 @@ test('primary coverage keeps fresh samples and fills only the stale required rou
   assert.equal(result.data[0].time, '2026-10-12T09:55:00.000Z');
 });
 
+test('canonical New Taipei primary intake marks valid per-truck GPS provenance', async () => {
+  const { result } = await run([primaryTruck('991001', '2026-10-12 18:00:00')], undefined, {
+    requiredNtpcRouteIds: [],
+    ntpcWebsiteBackupEnabled: false,
+  });
+
+  assert.deepEqual(result.data, [{
+    route_id: '991001', car_id: 'PRIMARY', lat: 25.1, lng: 121.6,
+    waste_type: 'garbage', time: '2026-10-12 18:00:00', source: 'ntpc-primary',
+    timestamp_kind: 'gps', source_timestamp: '2026-10-12T10:00:00.000Z',
+  }]);
+});
+
+test('unparseable canonical primary time and overridden NTPC URL are not trusted GPS evidence', async () => {
+  const invalid = await run([primaryTruck('991001', 'yesterday')], undefined, {
+    requiredNtpcRouteIds: [], ntpcWebsiteBackupEnabled: false,
+  });
+  assert.equal(invalid.result.data[0].source, undefined);
+  assert.equal(invalid.result.data[0].timestamp_kind, undefined);
+  const canonicalOverride = await run([primaryTruck('991001', '2026-10-12 18:00:00')], undefined, {
+    overrideUrl: NTPC_TRUCK_API_URL, requiredNtpcRouteIds: [], ntpcWebsiteBackupEnabled: false,
+  });
+  assert.equal(canonicalOverride.result.data[0].source, 'ntpc-primary');
+  assert.equal(canonicalOverride.result.data[0].timestamp_kind, 'gps');
+});
+
 test('primary connection success remains logical success when backup fails without vehicles', async () => {
   const { result } = await run([], new Error('backup unavailable'));
   assert.equal(result.ok, true);
@@ -97,7 +123,13 @@ test('disabled, legacy, override, unrelated and paused calls preserve primary wi
   ]) {
     const { result, calls } = await run(stale, undefined, options);
     assert.equal(calls.filter(({ url }) => url === websiteUrl).length, 0);
-    if (calls.some(({ url }) => url === NTPC_TRUCK_API_URL)) assert.deepEqual(result.data, [{ ...stale[0], waste_type: 'garbage' }]);
+    if (calls.some(({ url }) => url === NTPC_TRUCK_API_URL)) {
+      const expected = { ...stale[0], waste_type: 'garbage' };
+      Object.assign(expected, {
+        source: 'ntpc-primary', timestamp_kind: 'gps', source_timestamp: '2026-10-12T02:00:00.000Z',
+      });
+      assert.deepEqual(result.data, [expected]);
+    }
   }
 });
 

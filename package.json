@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test \"test/*.test.js\"",
+    "test": "node --require ./test/helpers/denyNetwork.cjs --test \"test/*.test.js\"",
     "test:dryrun": "node --env-file=.env scripts/dryRun.js",
     "openspec": "openspec"
   },

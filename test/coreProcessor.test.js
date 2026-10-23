@@ -56,7 +56,7 @@ test('formatArrivalMessage - contains expected structured fields and maps link',
     stopLng: 120.3014,
   });
 
-  assert.ok(msg.includes('【垃圾車即將抵達提醒】'));
+  assert.ok(msg.includes('【車輛已接近站點】'));
   assert.ok(msg.includes('站點：中正三路口'));
   assert.ok(msg.includes('路線：新興區清運A線'));
   assert.ok(msg.includes('約 185 公尺'));

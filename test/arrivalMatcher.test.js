@@ -272,3 +272,23 @@ test('Case 7: formatArrivalMessage preserves backward compatibility when quotaIn
   assert.ok(!msg.includes('📊 本月推播額度'), '未提供 quotaInfo 時不應顯示額度');
   assert.ok(!msg.includes('⛅【出門天氣速報】'), '未提供天氣時不應顯示天氣區塊');
 });
+
+test('formatArrivalMessage says the truck is near the stop without an unsupported fixed ETA', () => {
+  const msg = formatArrivalMessage({
+    routeName: '路十七線',
+    stopName: '中山南路146號',
+    distance: 85,
+    carId: 'KEK-3178',
+    weatherDesc: '晴天',
+    stopLat: 24.9076,
+    stopLng: 121.1365,
+  });
+
+  assert.ok(msg.includes('車輛已接近站點'));
+  assert.ok(!msg.includes('2～5 分鐘'));
+  assert.ok(msg.includes('📍 站點：中山南路146號'));
+  assert.ok(msg.includes('🛣️ 路線：路十七線'));
+  assert.ok(msg.includes('📏 當前距離：約 85 公尺'));
+  assert.ok(msg.includes('🏷️ 車號：KEK-3178'));
+  assert.ok(msg.includes('晴天'));
+});
