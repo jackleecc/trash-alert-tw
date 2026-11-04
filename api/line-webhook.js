@@ -6,7 +6,7 @@
  *   1. 接收 LINE 平台送來的 Webhook 事件（支援 join, message 等）。
  *   2. 當收到來自群組的任何事件時，自動在 Console 輸出明顯的 Group ID，並自動登錄至 Supabase 資料庫。
  *   3. 當 Bot 被加入群組時，主動在群組回覆 Group ID。
- *   4. 當群組內有人傳送包含「群組ID」、「/id」、「id」、「group」等字眼時，主動回覆 Group ID。
+ *   4. 當群組內有人傳送整則「/id」指令時，主動回覆 Group ID。
  *   5. 一對一私訊時，自動回覆使用者的 User ID。
  */
 
@@ -128,8 +128,10 @@ export default async function handler(req, res) {
       const userText = (event.message.text || '').trim();
       console.log(`[Webhook] 收到文字訊息: "${userText}"，來自對象: ${groupId || userId} (頻道: ${channelId})`);
 
-      // 寬鬆比對查詢關鍵字：包含 id、群組、group 等皆觸發回覆
-      const isIdQuery = /(id|群組|group|\/id|查詢)/i.test(userText);
+      // 群組僅接受完整 /id 指令；私訊保留原有關鍵字查詢方式
+      const isIdQuery = source.groupId
+        ? userText.toLowerCase() === '/id'
+        : /(id|群組|group|\/id|查詢)/i.test(userText);
 
       if (isIdQuery) {
         let replyText = '';

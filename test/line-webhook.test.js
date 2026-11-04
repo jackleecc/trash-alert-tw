@@ -25,6 +25,18 @@ function mockResponse() {
   return res;
 }
 
+function signedWebhookRequest(payload, secret) {
+  const rawBody = JSON.stringify(payload);
+  return {
+    method: 'POST',
+    headers: {
+      'x-line-signature': crypto.createHmac('SHA256', secret).update(rawBody).digest('base64'),
+    },
+    rawBody,
+    body: JSON.parse(rawBody),
+  };
+}
+
 test('line-webhook - rejects invalid signature with 401 when LINE_CHANNEL_SECRET is set (FIX-6)', async () => {
   const originalSecret = process.env.LINE_CHANNEL_SECRET;
   process.env.LINE_CHANNEL_SECRET = 'test-secret';
@@ -80,7 +92,7 @@ test('line-webhook - accepts valid signature and processes events (FIX-6)', asyn
     upsert: async () => ({ error: null }),
   }));
 
-  const payloadStr = JSON.stringify({
+  const req = signedWebhookRequest({
     events: [
       {
         type: 'join',
@@ -88,21 +100,7 @@ test('line-webhook - accepts valid signature and processes events (FIX-6)', asyn
         source: { groupId: 'G_TEST_1' },
       },
     ],
-  });
-
-  const validSig = crypto
-    .createHmac('SHA256', secret)
-    .update(Buffer.from(payloadStr, 'utf8'))
-    .digest('base64');
-
-  const req = {
-    method: 'POST',
-    headers: {
-      'x-line-signature': validSig,
-    },
-    rawBody: payloadStr,
-    body: JSON.parse(payloadStr),
-  };
+  }, secret);
   const res = mockResponse();
 
   try {
@@ -124,7 +122,7 @@ test('line-webhook - accepts valid Taoyuan signature and processes events', asyn
     upsert: async () => ({ error: null }),
   }));
 
-  const payloadStr = JSON.stringify({
+  const req = signedWebhookRequest({
     events: [
       {
         type: 'join',
@@ -132,21 +130,7 @@ test('line-webhook - accepts valid Taoyuan signature and processes events', asyn
         source: { groupId: 'G_TAOYUAN_1' },
       },
     ],
-  });
-
-  const validSig = crypto
-    .createHmac('SHA256', tySecret)
-    .update(Buffer.from(payloadStr, 'utf8'))
-    .digest('base64');
-
-  const req = {
-    method: 'POST',
-    headers: {
-      'x-line-signature': validSig,
-    },
-    rawBody: payloadStr,
-    body: JSON.parse(payloadStr),
-  };
+  }, tySecret);
   const res = mockResponse();
 
   try {
@@ -157,4 +141,94 @@ test('line-webhook - accepts valid Taoyuan signature and processes events', asyn
     process.env.LINE_CHANNEL_SECRET_TAOYUAN = originalTySecret;
     mock.restoreAll();
   }
+});
+
+async function postSignedText(text, source = { type: 'group', groupId: 'G_QUERY_TEST' }) {
+  const secret = 'group-id-query-test-secret';
+  const env = {
+    LINE_CHANNEL_SECRET: process.env.LINE_CHANNEL_SECRET,
+    LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+    DRY_RUN: process.env.DRY_RUN,
+  };
+  process.env.LINE_CHANNEL_SECRET = secret;
+  process.env.LINE_CHANNEL_ACCESS_TOKEN = 'offline-test-token';
+  delete process.env.DRY_RUN;
+
+  const replies = [];
+  mock.method(supabase, 'from', () => ({ upsert: async () => ({ error: null }) }));
+  mock.method(globalThis, 'fetch', async (url, options = {}) => {
+    const requestUrl = String(url);
+    if (requestUrl.endsWith(`/group/${source.groupId || source.roomId}/members/count`)) {
+      return { ok: true, json: async () => ({ count: 3 }) };
+    }
+    if (requestUrl === 'https://api.line.me/v2/bot/message/reply') {
+      replies.push({ url: requestUrl, ...JSON.parse(options.body) });
+      return { ok: true, status: 200 };
+    }
+    throw new Error(`Unexpected offline fetch endpoint: ${requestUrl}`);
+  });
+
+  const req = signedWebhookRequest({
+    events: [{
+      type: 'message',
+      replyToken: 'offline-reply-token',
+      source,
+      message: { type: 'text', text },
+    }],
+  }, secret);
+  const res = mockResponse();
+  try {
+    await handler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.ok, true);
+    return replies;
+  } finally {
+    for (const [name, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    mock.restoreAll();
+  }
+}
+
+test('line-webhook - exact /id replies with the group ID once', async () => {
+  const replies = await postSignedText('/id');
+  assert.equal(replies.length, 1);
+  assert.match(replies[0].messages[0].text, /G_QUERY_TEST/);
+});
+
+test('line-webhook - trims whitespace and ignores case for /ID', async () => {
+  const replies = await postSignedText('  /ID  ');
+  assert.equal(replies.length, 1);
+  assert.match(replies[0].messages[0].text, /G_QUERY_TEST/);
+});
+
+for (const text of ['id', '群組', 'group', '查詢', '請輸入 /id', '這個群組', 'video']) {
+  test(`line-webhook - does not reply to ordinary text ${JSON.stringify(text)}`, async () => {
+    const replies = await postSignedText(text);
+    assert.equal(replies.length, 0);
+  });
+}
+
+for (const text of [
+  'https://example.test/docs/id',
+  'https://example.test/search?next=/id',
+  'https://example.test/share\n/id',
+]) {
+  test(`line-webhook - does not reply to URL content ${JSON.stringify(text)}`, async () => {
+    const replies = await postSignedText(text);
+    assert.equal(replies.length, 0);
+  });
+}
+
+test('line-webhook - room text retains the existing query keyword behavior', async () => {
+  const replies = await postSignedText('查詢', { type: 'room', roomId: 'R_QUERY_TEST' });
+  assert.equal(replies.length, 1);
+  assert.match(replies[0].messages[0].text, /R_QUERY_TEST/);
+});
+
+test('line-webhook - private text retains the existing query keyword behavior', async () => {
+  const replies = await postSignedText('查詢', { type: 'user', userId: 'U_QUERY_TEST' });
+  assert.equal(replies.length, 1);
+  assert.match(replies[0].messages[0].text, /U_QUERY_TEST/);
 });

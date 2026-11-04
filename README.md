@@ -157,7 +157,7 @@ GitHub Actions 為氣象預報排程觸發器：
 
 * **群組加入 (Join)**：Bot 被邀請進入群組時，自動於 Console 輸出 Group ID，並在群組回覆引導訊息。
 * **自動登錄資料庫**：收到群組事件時，自動呼叫 `supabase.from('line_groups').upsert()` 登記該群組，省去手動新增之繁瑣手續。
-* **關鍵字查詢**：群組成員傳送包含 `id`、`群組`、`/id` 等關鍵字時，Bot 自動透過 Reply Token（不計入 Push 配額）回覆該群組的識別 ID。
+* **群組 ID 查詢**：群組成員傳送整則 `/id`（忽略首尾空白及英文字母大小寫）時，Bot 透過 Reply Token（不計入 Push 配額）回覆該群組的識別 ID。
 
 ---
 
@@ -302,7 +302,7 @@ GitHub Actions 為氣象預報排程觸發器：
 2. **建立/確認路線 (`routes`)**：設定 `id`（例如 `70`）、`name`、`city`（例如 `台南市`）、`active_days`（例如 `{1,2,4,6}`）。
 3. **建立站點 (`stops`)**：設定 `route_id`、`name`、座標 `lat`、`lng`、`order_index` 與表定清運時間 `schedule_time`。
 4. **撰寫演算法測試驗證**：於 `test/` 建立專屬單元測試，驗證自適應圍欄、班表時間窗、進場方位角與車速過濾均能正確判定。
-5. **邀請 Bot 並取得群組 ID**：將 LINE 官方帳號加入目標群組，在群組輸入「`查詢`」，Bot 即會回傳該群組的 `group_id`。
+5. **邀請 Bot 並取得群組 ID**：將 LINE 官方帳號加入目標群組，在群組輸入整則 `/id`（忽略首尾空白及英文字母大小寫），Bot 即會回傳該群組的 `group_id`。
 6. **綁定訂閱 (`subscriptions`)**：在 `subscriptions` 資料表新增記錄，將 `group_id` 與目標 `stop_id` 關聯。
 7. **產出驗證報告**：於 `docs/reports/` 記錄歷史數據佐證與測試覆蓋。
 
