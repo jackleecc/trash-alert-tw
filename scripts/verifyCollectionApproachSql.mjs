@@ -20,7 +20,7 @@ const event = {observedAt: '2026-10-22T11:54:00.000Z', sampledAt: '2026-10-22T11
 const commit = async (version, nextState = state, nextEvent = event, nextKey = key) => (await db.query('SELECT public.commit_collection_approach($1::jsonb, $2::bigint, $3::jsonb, $4::jsonb) AS result', [JSON.stringify(nextKey), version, JSON.stringify(nextState), JSON.stringify(nextEvent)])).rows[0].result;
 const count = async (table) => Number((await db.query(`SELECT count(*) AS count FROM public.${table}`)).rows[0].count);
 try {
-  await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; CREATE TABLE public.routes(id text PRIMARY KEY); CREATE TABLE public.stops(id integer PRIMARY KEY, route_id text); INSERT INTO public.routes VALUES (\'221010\'); INSERT INTO public.stops VALUES (3, \'221010\'), (25, \'221010\');');
+  await db.exec('CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; CREATE TABLE public.routes(id text PRIMARY KEY); CREATE TABLE public.stops(id integer PRIMARY KEY, route_id text); INSERT INTO public.routes VALUES (\'221010\'), (\'lagi2-006_2_21\'); INSERT INTO public.stops VALUES (3, \'221010\'), (25, \'221010\'), (9, \'lagi2-006_2_21\');');
   await db.exec(sql);
   await db.exec(sql);
   assert.notEqual((await db.query("SELECT to_regclass('public.collection_approach_state') AS table_name")).rows[0].table_name, null, 'shared predecessor evidence must have a durable state table');
@@ -73,6 +73,9 @@ try {
   const competing = await Promise.all([commit(0, state, event, competingKey), commit(0, state, event, competingKey)]);
   assert.equal(competing.filter(result => result.applied === true).length, 1);
   checks.push('competing submissions with one expected version have one winner');
+  assert.equal((await commit(0, state, event, { ...key, routeId: 'lagi2-006_2_21', stopId: '9' })).applied, true);
+  assert.equal((await commit(0, state, event, { ...key, routeId: 'lagi2-006_2_21', stopId: '999' })).applied, false);
+  checks.push('registered Yangmei route and stop commit successfully while unregistered stop is rejected');
   console.log(JSON.stringify({runtime: (await db.query('SELECT version()')).rows[0].version, passed: checks.length, checks}, null, 2));
 } finally {
   await db.close();

@@ -1,10 +1,7 @@
-# HANDOVER
+# Handover Snapshot
 
-- **目前／目標 Phase**：Phase 5B 本機驗收與規格封存完成。
-- **Change／Ticket／Milestone**：`strict-line-group-id-command`，3／3。封存於 `openspec/changes/archive/2026-11-05-strict-line-group-id-command`。主規格位於 `openspec/specs/line-group-id-query/spec.md`。
-- **已確認規格版本**：2026-11-05 方案 A。完整 `/id`，忽略首尾空白與英文字母大小寫。網址和附帶 `/id` 的網址訊息均不得觸發。
-- **依賴／阻礙**：沿用 ADR 0005 的 Webhook 與 LINE 回覆介面。正式部署與線上驗收待安排。
-- **完成／待辦 Checklist**：需求、設計、TDD、README、雙軸審查與修正、全套離線回歸、主規格同步及封存均完成。
-- **測試／驗收／審查證據**：群組 Red 6 通過、10 個拒絕案例因實際回覆 1 次、預期 0 次而失敗。聊天室相容性 Red 為實際 0 次、預期 1 次。最終 `npm test` 304／304 通過。變更與主規格 strict 驗證通過，封存後無進行中變更。Standards 首輪 2 項、最高 P3。Spec 首輪 1 項、最高 P2。兩軸重審各 0 未解決及 0 新增。基準 `15423e1f79f89b25940f6ac65ea38d69946a6bd7`，審查摘要與差異雜湊見封存 `tasks.md`。
-- **子代理模型／effort**：Git `gpt-6-luna`／Low，TDD Red／Green 與修正 `gpt-6-luna`／Medium，兩軸審查及重審 `gpt-6.1-sol`／High。主代理維持初始模型與 effort。
-- **下一步**：依使用者授權安排 Git 交付與部署。此輪驗收採離線 LINE 替身。
+- **Latest Change**: `early-upstream-corridor-alerts`（已歸檔於 `openspec/changes/archive/2026-11-10-early-upstream-corridor-alerts/`，主規格已同步至 `openspec/specs/collection-approach-confirmation/spec.md` 與 `openspec/specs/tainan-relay-early-notification/spec.md`；ADR：`docs/adr/0013-early-upstream-corridor-approach.md`）。
+- **Verification Status**: `npm test` `319/319` 通過（無網路測試）；PGlite 0.5.11 `12/12` 項 SQL 檢查通過；`openspec validate --all --strict` 通過；Phase 5A/5B Standards 與 Spec 雙軸審查於 `review-02.diff` 皆達 0 未解、0 新增（報告：`docs/reports/early-upstream-corridor-alerts-2026-11-10.md`）。
+- **Database State**: Supabase `public.stops` 楊梅 `lagi2-006_2_21` 已完成校準（`id=31` `大平街246號(右邊)` `17:10:00`、`id=8` `中山南路100號` `17:14:00`、保留 `id=9` `楊梅區中山南路146號` `17:15:00`、`id=10` `中山南路336巷口` `17:27:00`）；現有活躍訂閱 `id=14` 維持綁定 Stop `9`。
+- **Pending Production Ops**: 本機無 PostgreSQL DDL 權限。**部署新版 Cloud Run 前，維運必須先於 Supabase Dashboard SQL Editor 執行 `supabase/update_collection_approach_corridor.sql`**，使 `commit_collection_approach` RPC 支援多站點驗證；尚未執行前楊梅 Stop `9` 將安全失敗關閉並維持 `pending`。
+- **Safety Invariant**: 本變更驗證及資料同步全程未呼叫真實 LINE Messaging API，未消耗月配額；正式上線實車時段請依 `docs/collection-approach-confirmation.md` 觀察實際 `collection_approach_events`。

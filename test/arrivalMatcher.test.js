@@ -8,6 +8,7 @@ import {
   getIsoDayOfWeek,
   updateTruckTelemetry,
   recentTruckHistory,
+  DEFAULT_SCHEDULE_BEFORE_MINUTES,
 } from '../lib/arrivalMatcher.js';
 
 test('Case 1: isWithinScheduleWindow handles standard window, early/late bounds, and cross-midnight ring logic', () => {
@@ -291,4 +292,43 @@ test('formatArrivalMessage says the truck is near the stop without an unsupporte
   assert.ok(msg.includes('📏 當前距離：約 85 公尺'));
   assert.ok(msg.includes('🏷️ 車號：KEK-3178'));
   assert.ok(msg.includes('晴天'));
+});
+
+test('DEFAULT_SCHEDULE_BEFORE_MINUTES covers 25-minute upstream window', () => {
+  assert.equal(DEFAULT_SCHEDULE_BEFORE_MINUTES, 25);
+});
+
+test('formatArrivalMessage renders dynamic etaText when provided without hardcoded 2～5 分鐘', () => {
+  const msgWithEta = formatArrivalMessage({
+    routeName: '汐止區第1區路線(晚上)',
+    stopName: '汐萬路一段333巷口',
+    distance: 495,
+    carId: '647-BX',
+    etaText: '約 4～7 分鐘內',
+  });
+
+  assert.ok(
+    msgWithEta.includes('⏰ 預估抵達：約 4～7 分鐘內'),
+    'Should include dynamic etaText line'
+  );
+  assert.ok(
+    msgWithEta.includes('車輛已接近站點'),
+    'Should include standard nearing stop banner'
+  );
+  assert.ok(
+    !msgWithEta.includes('2～5 分鐘'),
+    'Should not include hardcoded 2～5 分鐘'
+  );
+
+  const msgWithoutEta = formatArrivalMessage({
+    routeName: '汐止區第1區路線(晚上)',
+    stopName: '汐萬路一段333巷口',
+    distance: 495,
+    carId: '647-BX',
+  });
+
+  assert.ok(
+    !msgWithoutEta.includes('⏰ 預估抵達'),
+    'Should omit ETA line when etaText is omitted'
+  );
 });

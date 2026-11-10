@@ -98,6 +98,14 @@ export default async function handler(req, res) {
         }
 
         if (targetStop) {
+          if (!subscribedStopIdSet.has(Number(targetStop.id))) {
+            const routeActiveStops = allStops.filter(
+              (s) => String(s.route_id) === String(targetStop.route_id) && subscribedStopIdSet.has(Number(s.id))
+            );
+            if (routeActiveStops.length === 1) {
+              targetStop = routeActiveStops[0];
+            }
+          }
           targetRoute = targetStop.routes;
         }
       }
@@ -197,7 +205,7 @@ export default async function handler(req, res) {
         `🚛【垃圾車即將抵達提醒 (臺南環保通)】`,
         `📍 站點：${targetStop.name}`,
         `🛣️ 路線：${routeName}`,
-        `⏰ 預估抵達：約 3～5 分鐘內`,
+        `⏰ 預估抵達：約 10 分鐘內`,
         car_id ? `🏷️ 車號：${car_id}` : null,
         targetStop.lat && targetStop.lng
           ? `🗺️ 站點地圖：https://www.google.com/maps/search/?api=1&query=${targetStop.lat},${targetStop.lng}`

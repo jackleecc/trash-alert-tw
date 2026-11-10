@@ -84,4 +84,9 @@ _Avoid_: AuthMiddleware, SecurityFilter
 包含執行狀態、觸發來源、車輛與通知計數之全系統排程稽核記錄。
 _Avoid_: AccessLog, TraceLog
 
+**Approach Corridor**:
+由目標清運點往前追溯方向連貫、班表時差相容之連續上游站點序列，用於跨實例順向進場確認與提前發送通知。
+_Avoid_: RoadPath, EarlyZone
+
+
 

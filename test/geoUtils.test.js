@@ -104,3 +104,17 @@ test('isMovingTowardsApproach - low-speed creeping truck (<5 km/h) is exempt fro
   assert.equal(passed, true, '低速挪車作業時速 < 5 km/h 應獲得方位豁免');
 });
 
+test('isMovingTowardsApproach - rejects low-speed (<5 km/h) reverse movement when displacement >= 12m', () => {
+  const reverseTruck = {
+    lat: 25.076390,
+    lng: 121.649942,
+    prev_lat: 25.076250,
+    prev_lng: 121.649942,
+    speed: 3.2,
+  };
+  const officialBearing = 180;
+  const passed = isMovingTowardsApproach(reverseTruck, officialBearing);
+  assert.equal(passed, false);
+});
+
+

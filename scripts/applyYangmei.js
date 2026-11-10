@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import { supabase } from '../lib/supabaseClient.js';
+import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 
 const TARGET_GROUP_ID = 'Cbc0aef28eb6226fafe1ea7e5a6e4487e';
 
@@ -24,11 +26,19 @@ async function applyYangmei() {
   const stopsPayload = [
     {
       route_id: 'lagi2-006_2_21',
+      name: '大平街246號(右邊)',
+      lat: 24.910226,
+      lng: 121.140549,
+      order_index: 1,
+      schedule_time: '17:10:00',
+    },
+    {
+      route_id: 'lagi2-006_2_21',
       name: '中山南路100號',
       lat: 24.907498,
       lng: 121.137464,
       order_index: 2,
-      schedule_time: '17:24:00',
+      schedule_time: '17:14:00',
     },
     {
       route_id: 'lagi2-006_2_21',
@@ -36,7 +46,7 @@ async function applyYangmei() {
       lat: 24.907648,
       lng: 121.136540,
       order_index: 3,
-      schedule_time: '17:25:00',
+      schedule_time: '17:15:00',
     },
     {
       route_id: 'lagi2-006_2_21',
@@ -132,7 +142,9 @@ async function applyYangmei() {
   console.log('\n🎉 桃園市楊梅區中山南路146號 站點資料建立與訂閱綁定全數成功！');
 }
 
-applyYangmei().catch((err) => {
-  console.error('❌ 執行失敗:', err);
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  applyYangmei().catch((err) => {
+    console.error('❌ 執行失敗:', err);
+    process.exit(1);
+  });
+}

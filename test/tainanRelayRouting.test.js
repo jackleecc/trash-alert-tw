@@ -139,3 +139,120 @@ test('tainanRelayRouting - prioritizes active subscribed stop (Stop 6) over unsu
     global.fetch = originalFetch;
   }
 });
+
+test('tainanRelayRouting - redirects unsubscribed upstream stop match (文化路128巷10號) to the sole active subscribed stop on route 70 (Stop 6)', async () => {
+  process.env.CRON_SECRET = 'test-secret-123';
+  process.env.LINE_CHANNEL_ACCESS_TOKEN = 'mock-line-token';
+
+  const originalFrom = supabase.from;
+  const originalRpc = supabase.rpc;
+  const originalFetch = global.fetch;
+
+  let pushedMessage = null;
+
+  global.fetch = async (url, options) => {
+    if (url.includes('api.line.me')) {
+      pushedMessage = JSON.parse(options.body);
+      return { ok: true, status: 200, json: async () => ({}) };
+    }
+    return { ok: true, status: 200, text: async () => '' };
+  };
+
+  supabase.from = (table) => {
+    if (table === 'stops') {
+      return {
+        select: () => ({
+          data: [
+            {
+              id: 5,
+              name: '文化路128巷10號',
+              route_id: 70,
+              routes: { id: 70, name: '永康-夜間31', city: '台南市' },
+            },
+            {
+              id: 6,
+              name: '永康區文化路40號',
+              route_id: 70,
+              routes: { id: 70, name: '永康-夜間31', city: '台南市' },
+            },
+          ],
+          error: null,
+        }),
+      };
+    }
+    if (table === 'subscriptions') {
+      return {
+        select: () => ({
+          eq: (field, val) => {
+            if (field === 'line_groups.is_active' && val === true) {
+              return {
+                data: [
+                  { stop_id: 6, line_groups: { group_id: 'G_TAINAN', is_active: true } },
+                ],
+                error: null,
+                eq: async () => ({
+                  data: [
+                    { group_id: 'G_TAINAN', line_groups: { group_id: 'G_TAINAN', is_active: true } },
+                  ],
+                  error: null,
+                }),
+              };
+            }
+            if (field === 'stop_id') {
+              return {
+                eq: async () => ({
+                  data: val === 6 ? [{ group_id: 'G_TAINAN', line_groups: { group_id: 'G_TAINAN', is_active: true } }] : [],
+                  error: null,
+                }),
+              };
+            }
+            return {
+              eq: async () => ({ data: [], error: null }),
+              data: [],
+              error: null,
+            };
+          },
+        }),
+      };
+    }
+    if (table === 'notification_logs') {
+      const chain = {
+        eq: () => chain,
+        gte: () => chain,
+        limit: async () => ({ data: [], error: null }),
+      };
+      return {
+        select: () => chain,
+        insert: async () => ({ error: null }),
+      };
+    }
+    return { insert: async () => ({ error: null }) };
+  };
+
+  supabase.rpc = async (fn) => {
+    if (fn === 'claim_notification') return { data: 201, error: null };
+    if (fn === 'reserve_quota') return { data: [{ reserved: true, used_count: 1, newly_melted: false }], error: null };
+    return { data: null, error: null };
+  };
+
+  const { req, res } = createMockReqRes({
+    headers: { 'x-cron-secret': 'test-secret-123' },
+    body: {
+      title: '臺南環保通',
+      text: '清運點提醒：文化路128巷10號即將到站',
+    },
+  });
+
+  try {
+    await tainanRelayHandler(req, res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.bodyData.stopId, 6);
+    assert.equal(res.bodyData.successCount, 1);
+    assert.ok(pushedMessage, 'LINE push must be called');
+    assert.ok(pushedMessage.messages[0].text.includes('永康區文化路40號'));
+  } finally {
+    supabase.from = originalFrom;
+    supabase.rpc = originalRpc;
+    global.fetch = originalFetch;
+  }
+});

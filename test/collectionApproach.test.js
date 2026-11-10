@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateCollectionApproach } from '../lib/collectionApproach.js';
+import { XIZHI_221010_REAL_STOPS } from './fixtures/xizhi221010Stops.js';
 
 const STOP = { id: 3, route_id: '221010', lat: 25.076252, lng: 121.649942 };
 const PREDECESSOR = { id: 25, route_id: '221010', lat: 25.077625, lng: 121.649992 };
@@ -317,3 +318,299 @@ test('evaluateCollectionApproach rejects a target stop outside the protected top
   assert.equal(result.status, 'pending');
   assert.equal(result.reason, 'missing_topology');
 });
+
+const YM_STOPS = [
+  { id: 101, route_id: 'lagi2-006_2_21', order_index: 1, name: '大平街246號(右邊)', lat: 24.910226, lng: 121.140549, schedule_time: '17:10:00' },
+  { id: 8, route_id: 'lagi2-006_2_21', order_index: 2, name: '中山南路100號', lat: 24.907498, lng: 121.137464, schedule_time: '17:14:00' },
+  { id: 9, route_id: 'lagi2-006_2_21', order_index: 3, name: '楊梅區中山南路146號', lat: 24.907648, lng: 121.136540, schedule_time: '17:15:00' },
+];
+
+function ymSample(seconds, point, overrides = {}) {
+  const instant = new Date(Date.parse('2026-11-10T09:10:00Z') + seconds * 1_000).toISOString();
+  return {
+    routeId: 'lagi2-006_2_21',
+    carId: 'KEK-3178',
+    lat: point.lat,
+    lng: point.lng,
+    sampledAt: instant,
+    observedAt: instant,
+    source: 'taoyuan-primary',
+    timestampKind: 'gps',
+    reportedSpeed: null,
+    ...overrides,
+  };
+}
+
+test('evaluateCollectionApproach confirms early along Xizhi upstream corridor', () => {
+  const targetStop = {
+    ...XIZHI_221010_REAL_STOPS.find((s) => s.rank === 17),
+    id: 3,
+  };
+
+  const sample1 = {
+    routeId: '221010',
+    carId: '647-BX',
+    lat: 25.0809083333333,
+    lng: 121.649451666667,
+    sampledAt: '2026-11-09T11:48:11Z',
+    observedAt: '2026-11-09T11:48:11Z',
+    source: 'ntpc-primary',
+    timestampKind: 'gps',
+    reportedSpeed: null,
+  };
+
+  const sample2 = {
+    routeId: '221010',
+    carId: '647-BX',
+    lat: 25.0806683333333,
+    lng: 121.649411666667,
+    sampledAt: '2026-11-09T11:49:09Z',
+    observedAt: '2026-11-09T11:49:09Z',
+    source: 'ntpc-primary',
+    timestampKind: 'gps',
+    reportedSpeed: null,
+  };
+
+  const first = evaluateCollectionApproach({
+    sample: sample1,
+    previousState: null,
+    stop: targetStop,
+    allRouteStops: XIZHI_221010_REAL_STOPS,
+    nowMs: Date.parse(sample1.observedAt),
+  });
+  assert.equal(first.status, 'pending');
+
+  const second = evaluateCollectionApproach({
+    sample: sample2,
+    previousState: first.nextState,
+    stop: targetStop,
+    allRouteStops: XIZHI_221010_REAL_STOPS,
+    nowMs: Date.parse(sample2.observedAt),
+  });
+  assert.equal(second.status, 'confirmed');
+  assert.equal(second.reason, 'confirmed_approach');
+});
+
+test('evaluateCollectionApproach excludes Rank 13 and rejects northbound pass on Xizhi corridor', () => {
+  const targetStop = {
+    ...XIZHI_221010_REAL_STOPS.find((s) => s.rank === 17),
+    id: 3,
+  };
+
+  const points = [
+    { sampledAt: '2026-11-09T11:42:11Z', lat: 25.076235, lng: 121.646435 },
+    { sampledAt: '2026-11-09T11:43:10Z', lat: 25.075935, lng: 121.649328333333 },
+    { sampledAt: '2026-11-09T11:44:11Z', lat: 25.07511, lng: 121.650428333333 },
+    { sampledAt: '2026-11-09T11:46:11Z', lat: 25.07622, lng: 121.649901666667 },
+  ];
+
+  let state = null;
+  const results = [];
+  for (const pt of points) {
+    const sample = {
+      routeId: '221010',
+      carId: '647-BX',
+      lat: pt.lat,
+      lng: pt.lng,
+      sampledAt: pt.sampledAt,
+      observedAt: pt.sampledAt,
+      source: 'ntpc-primary',
+      timestampKind: 'gps',
+      reportedSpeed: null,
+    };
+    const res = evaluateCollectionApproach({
+      sample,
+      previousState: state,
+      stop: targetStop,
+      allRouteStops: XIZHI_221010_REAL_STOPS,
+      nowMs: Date.parse(pt.sampledAt),
+    });
+    results.push(res);
+    state = res.nextState;
+  }
+
+  for (const res of results) {
+    assert.notEqual(res.status, 'confirmed');
+  }
+
+  const lastResult = results[3];
+  assert.equal(lastResult.status, 'rejected');
+  assert.equal(lastResult.reason, 'opposite_direction');
+});
+
+test('evaluateCollectionApproach handles cruising then drift then southbound confirmation on Xizhi corridor', () => {
+  const targetStop = {
+    ...XIZHI_221010_REAL_STOPS.find((s) => s.rank === 17),
+    id: 3,
+  };
+
+  const seq = [
+    { sampledAt: '2026-11-06T11:45:21Z', lat: 25.077018, lng: 121.650247 },
+    { sampledAt: '2026-11-06T11:46:10Z', lat: 25.078520, lng: 121.649708 }, // cruising
+    { sampledAt: '2026-11-06T11:47:09Z', lat: 25.081467, lng: 121.649558 }, // cruising
+    { sampledAt: '2026-11-06T11:48:12Z', lat: 25.081533, lng: 121.649522 }, // 8m drift north
+    { sampledAt: '2026-11-06T11:49:09Z', lat: 25.080643, lng: 121.649395 }, // ~100m south near 37巷口
+    { sampledAt: '2026-11-06T11:50:24Z', lat: 25.079537, lng: 121.649142 }, // ~126m south
+  ];
+
+  let state = null;
+  const results = [];
+  for (const pt of seq) {
+    const sample = {
+      routeId: '221010',
+      carId: '647-BX',
+      lat: pt.lat,
+      lng: pt.lng,
+      sampledAt: pt.sampledAt,
+      observedAt: pt.sampledAt,
+      source: 'ntpc-primary',
+      timestampKind: 'gps',
+      reportedSpeed: null,
+    };
+    const res = evaluateCollectionApproach({
+      sample,
+      previousState: state,
+      stop: targetStop,
+      allRouteStops: XIZHI_221010_REAL_STOPS,
+      nowMs: Date.parse(pt.sampledAt),
+    });
+    results.push(res);
+    state = res.nextState;
+  }
+
+  // 11:48:12Z is pending (drift does not clear reverse lock)
+  assert.equal(results[3].status, 'pending');
+
+  // 11:50:24Z is confirmed
+  assert.equal(results[5].status, 'confirmed');
+  assert.equal(results[5].reason, 'confirmed_approach');
+
+  // 11:49:09Z sets anchor at 37巷口 and is pending
+  assert.equal(results[4].status, 'pending');
+  assert.ok(results[4].nextState.anchor);
+});
+
+test('evaluateCollectionApproach confirms Yangmei Stop 9 corridor at curve point (24.90951, 121.13932)', () => {
+  const targetStop = YM_STOPS[2];
+  const firstSample = ymSample(0, YM_STOPS[0]);
+  const first = evaluateCollectionApproach({
+    sample: firstSample,
+    previousState: null,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(firstSample.observedAt),
+  });
+  assert.equal(first.status, 'pending');
+
+  const secondSample = ymSample(60, { lat: 24.90951, lng: 121.13932 });
+  const second = evaluateCollectionApproach({
+    sample: secondSample,
+    previousState: first.nextState,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(secondSample.observedAt),
+  });
+  assert.equal(second.status, 'confirmed');
+  assert.equal(second.reason, 'confirmed_approach');
+  assert.equal(first.reason, 'first_sample');
+});
+
+test('evaluateCollectionApproach confirms Yangmei Stop 9 corridor across L-bend curve (24.90717, 121.13955)', () => {
+  const targetStop = YM_STOPS[2];
+  const firstSample = ymSample(0, YM_STOPS[0]);
+  const first = evaluateCollectionApproach({
+    sample: firstSample,
+    previousState: null,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(firstSample.observedAt),
+  });
+  assert.equal(first.status, 'pending');
+
+  const secondSample = ymSample(60, { lat: 24.90717, lng: 121.13955 });
+  const second = evaluateCollectionApproach({
+    sample: secondSample,
+    previousState: first.nextState,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(secondSample.observedAt),
+  });
+  assert.equal(second.status, 'confirmed');
+  assert.equal(second.reason, 'confirmed_approach');
+});
+
+test('evaluateCollectionApproach rejects opposite NE movement from Yangmei first stop', () => {
+  const targetStop = YM_STOPS[2];
+  const firstSample = ymSample(0, YM_STOPS[0]);
+  const first = evaluateCollectionApproach({
+    sample: firstSample,
+    previousState: null,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(firstSample.observedAt),
+  });
+  assert.equal(first.status, 'pending');
+
+  const secondSample = ymSample(60, { lat: 24.9106, lng: 121.1410 });
+  const second = evaluateCollectionApproach({
+    sample: secondSample,
+    previousState: first.nextState,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(secondSample.observedAt),
+  });
+  assert.equal(second.status, 'rejected');
+  assert.equal(second.reason, 'opposite_direction');
+});
+
+test('evaluateCollectionApproach stays pending outside_target when past target stop outside 120m', () => {
+  const targetStop = {
+    ...XIZHI_221010_REAL_STOPS.find((s) => s.rank === 17),
+    id: 3,
+  };
+  const predecessor = XIZHI_221010_REAL_STOPS.find((s) => s.rank === 16);
+
+  const seedSample = {
+    routeId: '221010',
+    carId: '647-BX',
+    lat: predecessor.lat,
+    lng: predecessor.lng,
+    sampledAt: '2026-11-09T11:52:00Z',
+    observedAt: '2026-11-09T11:52:00Z',
+    source: 'ntpc-primary',
+    timestampKind: 'gps',
+    reportedSpeed: null,
+  };
+
+  const first = evaluateCollectionApproach({
+    sample: seedSample,
+    previousState: null,
+    stop: targetStop,
+    allRouteStops: XIZHI_221010_REAL_STOPS,
+    nowMs: Date.parse(seedSample.observedAt),
+  });
+
+  const pastSample = {
+    routeId: '221010',
+    carId: '647-BX',
+    lat: 25.07505,
+    lng: 121.649942,
+    sampledAt: '2026-11-09T11:54:00Z',
+    observedAt: '2026-11-09T11:54:00Z',
+    source: 'ntpc-primary',
+    timestampKind: 'gps',
+    reportedSpeed: null,
+  };
+
+  const second = evaluateCollectionApproach({
+    sample: pastSample,
+    previousState: first.nextState,
+    stop: targetStop,
+    allRouteStops: XIZHI_221010_REAL_STOPS,
+    nowMs: Date.parse(pastSample.observedAt),
+  });
+
+  assert.equal(second.status, 'pending');
+  assert.equal(second.reason, 'outside_target');
+});
+

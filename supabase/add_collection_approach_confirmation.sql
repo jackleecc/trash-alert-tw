@@ -1,4 +1,4 @@
--- Shared, versioned approach evidence for the protected Xizhi stop.
+-- Shared, versioned approach evidence for protected collection stops.
 -- This migration is additive and safe to apply more than once.
 
 CREATE TABLE IF NOT EXISTS public.collection_approach_state (
@@ -99,9 +99,14 @@ BEGIN
   v_stop_id := p_key->>'stopId';
   v_car_id := p_key->>'carId';
 
-  IF v_route_id <> '221010' OR v_stop_id <> '3' OR v_expires_at IS NULL
-     OR jsonb_typeof(p_event->'observedAt') IS DISTINCT FROM 'string'
-     OR (p_event->>'sampledAt' IS NOT NULL AND jsonb_typeof(p_event->'sampledAt') IS DISTINCT FROM 'string') THEN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.stops AS st
+    WHERE st.route_id = v_route_id
+      AND st.id::text = v_stop_id
+  ) OR v_expires_at IS NULL
+     OR jsonb_typeof((p_event::jsonb)->'observedAt') IS DISTINCT FROM 'string'
+     OR (p_event->>'sampledAt' IS NOT NULL AND jsonb_typeof((p_event::jsonb)->'sampledAt') IS DISTINCT FROM 'string') THEN
     RETURN jsonb_build_object('applied', false, 'version', NULL);
   END IF;
 
