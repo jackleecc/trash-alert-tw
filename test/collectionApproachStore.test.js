@@ -219,3 +219,22 @@ test('observeCollectionApproach preserves untrusted source evidence with a nulla
   assert.equal(store.events[0].sampledAt, null);
   assert.equal(store.events[0].rawSampledAt, 'not-a-gps-time');
 });
+
+test('observeCollectionApproach logs explicit RPC rejection warning when initial commit returns version null', async (t) => {
+  const warnings = [];
+  t.mock.method(console, 'warn', (...args) => warnings.push(args));
+  const sample = sampleAt('2026-10-22T11:54:00Z');
+  const result = await observeCollectionApproach({
+    sample,
+    stop,
+    predecessor,
+    store: {
+      async read() { return null; },
+      async commit() { return { applied: false, version: null }; },
+    },
+  });
+
+  assert.equal(result.status, 'pending');
+  assert.equal(result.reason, 'storage_conflict');
+  assert.equal(warnings.some((args) => String(args[0]).includes('RPC rejected key or payload')), true);
+});

@@ -563,6 +563,72 @@ test('evaluateCollectionApproach rejects opposite NE movement from Yangmei first
   assert.equal(second.reason, 'opposite_direction');
 });
 
+test('evaluateCollectionApproach anchors on eastbound depot entry into Yangmei first stop and confirms on Da-Ping St approach', () => {
+  const targetStop = YM_STOPS[2];
+
+  const sample1 = ymSample(0, { lat: 24.910220, lng: 121.138500 });
+  const step1 = evaluateCollectionApproach({
+    sample: sample1,
+    previousState: null,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(sample1.observedAt),
+  });
+
+  const sample2 = ymSample(60, YM_STOPS[0]);
+  const step2 = evaluateCollectionApproach({
+    sample: sample2,
+    previousState: step1.nextState,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(sample2.observedAt),
+  });
+
+  assert.equal(step2.status, 'pending');
+  assert.equal(step2.nextState.requiresPredecessorPass, false);
+  assert.equal(Boolean(step2.nextState.anchor), true);
+
+  const sample3 = ymSample(120, { lat: 24.909510, lng: 121.139320 });
+  const step3 = evaluateCollectionApproach({
+    sample: sample3,
+    previousState: step2.nextState,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(sample3.observedAt),
+  });
+
+  assert.equal(step3.status, 'confirmed');
+  assert.equal(step3.reason, 'confirmed_approach');
+});
+
+test('evaluateCollectionApproach anchors mid-segment on Da-Ping St and confirms across 145-degree SSE L-bend leg', () => {
+  const targetStop = YM_STOPS[2];
+
+  const sample1 = ymSample(0, { lat: 24.909510, lng: 121.139320 });
+  const step1 = evaluateCollectionApproach({
+    sample: sample1,
+    previousState: null,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(sample1.observedAt),
+  });
+
+  assert.equal(step1.status, 'pending');
+  assert.equal(Boolean(step1.nextState.anchor), true);
+
+  const sample2 = ymSample(60, { lat: 24.909030, lng: 121.139690 });
+  const step2 = evaluateCollectionApproach({
+    sample: sample2,
+    previousState: step1.nextState,
+    stop: targetStop,
+    allRouteStops: YM_STOPS,
+    nowMs: Date.parse(sample2.observedAt),
+  });
+
+  assert.equal(step2.status, 'confirmed');
+  assert.equal(step2.reason, 'confirmed_approach');
+});
+
 test('evaluateCollectionApproach stays pending outside_target when past target stop outside 120m', () => {
   const targetStop = {
     ...XIZHI_221010_REAL_STOPS.find((s) => s.rank === 17),
